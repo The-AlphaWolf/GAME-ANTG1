@@ -58,6 +58,8 @@ describe('submitAction', () => {
 
     (prisma.player.findUnique as any).mockResolvedValueOnce({
       id: 'player-1',
+      isAlive: true,
+      health: 100,
       energy: 100,
     });
 

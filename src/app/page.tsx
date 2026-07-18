@@ -58,6 +58,7 @@ export default async function Home() {
         <NarrativeConsole
           events={sortedEvents}
           activeEncounter={player.activeEncounter}
+          isDead={!player.isAlive || player.health <= 0}
         />
       }
       rightPanel={

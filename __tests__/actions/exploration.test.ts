@@ -43,6 +43,8 @@ describe('Exploration Actions', () => {
     (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
     (prisma.player.findUnique as Mock).mockResolvedValue({
       id: 'p1',
+      isAlive: true,
+      health: 100,
       vehicle: null,
     });
 
@@ -54,6 +56,8 @@ describe('Exploration Actions', () => {
     (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
     (prisma.player.findUnique as Mock).mockResolvedValue({
       id: 'p1',
+      isAlive: true,
+      health: 100,
       vehicle: { fuel: 0 },
     });
 
@@ -65,6 +69,8 @@ describe('Exploration Actions', () => {
     (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
     (prisma.player.findUnique as Mock).mockResolvedValue({
       id: 'p1',
+      isAlive: true,
+      health: 100,
       vehicle: { fuel: 10 },
       activeEncounter: { id: 'enc1' },
     });
@@ -77,6 +83,8 @@ describe('Exploration Actions', () => {
     (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
     (prisma.player.findUnique as Mock).mockResolvedValue({
       id: 'p1',
+      isAlive: true,
+      health: 100,
       distanceTraveled: 100,
       inventory: [],
       vehicle: { id: 'v1', fuel: 50 },

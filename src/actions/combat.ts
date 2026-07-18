@@ -19,6 +19,7 @@ export async function initiateCombat(
   });
 
   if (!player) return { error: 'Player not found' };
+  if (!player.isAlive || player.health <= 0) return { error: 'You are dead' };
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -67,6 +68,7 @@ export async function executeCombatTurn(action: CombatAction) {
   });
 
   if (!player) return { error: 'Player not found' };
+  if (!player.isAlive || player.health <= 0) return { error: 'You are dead' };
   if (!player.activeEncounter) return { error: 'No active encounter' };
 
   const encounter = player.activeEncounter;
@@ -117,18 +119,24 @@ export async function executeCombatTurn(action: CombatAction) {
 
       // Apply damage
       const newEnemyHp = Math.max(0, encounter.enemyHp - playerDamage);
-      const newPlayerHp = Math.max(0, player.health - enemyDamage);
+      const newPlayerHp = Math.max(0, Math.floor(player.health - enemyDamage));
+      const playerDied = newPlayerHp <= 0;
 
-      if (newEnemyHp <= 0) {
+      if (newEnemyHp <= 0 && !playerDied) {
         narrativeText += ` You defeated the ${encounter.enemyName}!`;
         encounterEnded = true;
         enemyDead = true;
       }
 
+      if (playerDied) {
+        narrativeText += ` The blow is fatal. You collapse on the asphalt as the world fades to black...`;
+        encounterEnded = true;
+      }
+
       // Update Player
       await tx.player.update({
         where: { id: player.id },
-        data: { health: newPlayerHp },
+        data: { health: newPlayerHp, isAlive: !playerDied },
       });
 
       // Log combat turn event

@@ -36,7 +36,11 @@ describe('Combat Actions', () => {
 
     it('spawns an encounter and clears old ones in a transaction', async () => {
       (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      (prisma.player.findUnique as Mock).mockResolvedValue({ id: 'player-1' });
+      (prisma.player.findUnique as Mock).mockResolvedValue({
+        id: 'player-1',
+        isAlive: true,
+        health: 100,
+      });
 
       // Mock the transaction callback behavior
       (prisma.$transaction as Mock).mockImplementation(async (cb) => {
@@ -75,6 +79,8 @@ describe('Combat Actions', () => {
       (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
       (prisma.player.findUnique as Mock).mockResolvedValue({
         id: 'player-1',
+        isAlive: true,
+        health: 100,
         activeEncounter: null,
       });
 
@@ -86,6 +92,7 @@ describe('Combat Actions', () => {
       (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
       (prisma.player.findUnique as Mock).mockResolvedValue({
         id: 'player-1',
+        isAlive: true,
         health: 100,
         level: 5,
         inventory: [],
@@ -115,7 +122,7 @@ describe('Combat Actions', () => {
 
         expect(tx.player.update).toHaveBeenCalledWith({
           where: { id: 'player-1' },
-          data: { health: 90 },
+          data: { health: 90, isAlive: true },
         });
 
         expect(tx.eventLog.create).toHaveBeenCalledTimes(2);
