@@ -1,5 +1,5 @@
 import { Separator } from '@/components/ui/separator';
-import { Package, Settings, Car } from 'lucide-react';
+import { Package, Settings, Car, Hammer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 import {
@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { InventorySheet } from './inventory-sheet';
 import { VehicleSheet } from './vehicle-sheet';
+import { CraftingSheet } from './crafting-sheet';
 
 type PlayerWithInventory = Player & {
   inventory: PlayerInventory[];
@@ -90,6 +91,22 @@ export function QuickAccessPanel({ player }: { player: PlayerWithInventory }) {
             </VehicleSheet>
           )}
         </div>
+      </div>
+      <Separator className="bg-zinc-800" />
+
+      {/* Crafting System */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
+          <Hammer className="h-4 w-4" /> CRAFTING BENCH
+        </h3>
+        <CraftingSheet player={player}>
+          <Button
+            variant="outline"
+            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
+          >
+            Open Crafting Bench
+          </Button>
+        </CraftingSheet>
       </div>
 
       <Separator className="bg-zinc-800" />
