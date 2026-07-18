@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// EVENT LOG (The Single Source of Truth)
+// ------------------------------------------------------
+model EventLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  playerId  String
+  eventType String
+  payload   Json
+
+  @@index([playerId])
+  @@index([timestamp])
+}
+
+// ------------------------------------------------------
+// READ PROJECTIONS
+// ------------------------------------------------------
+
+model Player {
+  id          String   @id @default(uuid())
+  username    String   @unique
+  level       Int      @default(1)
+  xp          Int      @default(0)
+  sanity      Int      @default(100)
+  fatigue     Int      @default(0)
+  thirst      Int      @default(0)
+  isAlive     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  vehicle     Vehicle?
+}
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  playerId    String   @unique
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  type        String   @default("Common Van")
+  level       Int      @default(1)
+  armor       Int      @default(10)
+  fuel        Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WorldObject {
+  id          String   @id @default(uuid())
+  type        String   // e.g., "Loot", "NPC", "Monster"
+  sectorId    String
+  positionX   Float
+  positionY   Float
+  metadata    Json
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  @@index([sectorId])
+}
