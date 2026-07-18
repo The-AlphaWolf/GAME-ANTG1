@@ -1,16 +1,35 @@
-import { ScrollArea } from '@/components/ui/scroll-area';
+'use client';
 
+import { useEffect, useRef } from 'react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { EventLog } from '@prisma/client';
 
 export function ActionFeed({ events }: { events: EventLog[] }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Adding a short timeout ensures the DOM has updated with the new elements before scrolling
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 100);
+  }, [events]);
+
   return (
-    <ScrollArea className="flex-1 p-4 pb-0">
+    <ScrollArea className="flex-1 min-h-0 overflow-hidden p-4 pb-0">
       <div className="space-y-4 max-w-3xl mx-auto">
         {events.map((e) => {
           // Parse JSONB payload safely
-
           const payload = (e.payload as Record<string, unknown>) || {};
-          const text = (payload.text as string) || 'Unknown event';
+          let text = payload.text as string | undefined;
+
+          // If there is no narrative text, but there is an action, show the action
+          if (!text && payload.action) {
+            text = `> ${payload.action}`;
+          }
+
+          // Hide internal events without text to display
+          if (!text) return null;
+
           const time = new Date(e.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
@@ -35,6 +54,7 @@ export function ActionFeed({ events }: { events: EventLog[] }) {
             </div>
           );
         })}
+        <div ref={bottomRef} className="h-4" />
       </div>
     </ScrollArea>
   );
