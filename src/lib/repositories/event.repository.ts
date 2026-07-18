@@ -1,6 +1,8 @@
 import { prisma } from '../db';
 
-export type EventPayload = Record<string, unknown>;
+import { Prisma } from '@prisma/client';
+
+export type EventPayload = Prisma.InputJsonObject;
 
 export class EventRepository {
   /**
