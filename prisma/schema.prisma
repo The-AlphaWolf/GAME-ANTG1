@@ -117,6 +117,33 @@ model Vehicle {
   fuel        Int      @default(100)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  components  VehicleComponent[]
+}
+
+enum ComponentType {
+  ENGINE
+  CHASSIS
+  TIRES
+  ARMOR
+  STORAGE
+  FUEL_SYSTEM
+}
+
+model VehicleComponent {
+  id             String        @id @default(uuid())
+  vehicleId      String
+  vehicle        Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type           ComponentType
+  name           String
+  rarity         Int           @default(1)
+  durability     Float         @default(100.0)
+  maxDurability  Float         @default(100.0)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([vehicleId])
 }
 
 model PlayerInventory {

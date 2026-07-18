@@ -17,7 +17,11 @@ export default async function Home() {
   // Use the session name (username) to find the player
   const player = await prisma.player.findUnique({
     where: { username: session.user.name || '' },
-    include: { inventory: true, activeEncounter: true },
+    include: {
+      inventory: true,
+      activeEncounter: true,
+      vehicle: { include: { components: true } },
+    },
   });
 
   if (!player) {

@@ -1,13 +1,19 @@
 import { Separator } from '@/components/ui/separator';
-import { Package, Shield, Settings } from 'lucide-react';
-import { Progress } from '@/components/ui/progress';
+import { Package, Settings, Car } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-import { Player, PlayerInventory } from '@prisma/client';
+import {
+  Player,
+  PlayerInventory,
+  Vehicle,
+  VehicleComponent,
+} from '@prisma/client';
 import { InventorySheet } from './inventory-sheet';
+import { VehicleSheet } from './vehicle-sheet';
 
-// Extend Player type to include inventory relation
 type PlayerWithInventory = Player & {
   inventory: PlayerInventory[];
+  vehicle?: (Vehicle & { components: VehicleComponent[] }) | null;
 };
 
 export function QuickAccessPanel({ player }: { player: PlayerWithInventory }) {
@@ -61,32 +67,28 @@ export function QuickAccessPanel({ player }: { player: PlayerWithInventory }) {
           <Settings className="h-4 w-4" /> VEHICLE: COMMON VAN
         </h3>
 
+        {/* Vehicle Quick Status */}
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="flex items-center gap-2 text-zinc-400">
-                <Shield className="h-4 w-4" /> Chassis Armor (Lv {player.level})
+                <Car className="h-4 w-4" /> Vehicle
               </span>
-              <span className="font-medium text-zinc-300">10/10</span>
-            </div>
-            <Progress
-              value={100}
-              className="h-2 bg-zinc-800 [&>div]:bg-zinc-400"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="flex items-center gap-2 text-emerald-400">
-                Fuel
+              <span className="text-blue-400 font-mono text-xs">
+                {player.vehicle?.fuel ?? 0}% Fuel
               </span>
-              <span className="font-medium text-zinc-300">45%</span>
             </div>
-            <Progress
-              value={45}
-              className="h-2 bg-zinc-800 [&>div]:bg-emerald-500"
-            />
           </div>
+          {player.vehicle && (
+            <VehicleSheet vehicle={player.vehicle}>
+              <Button
+                variant="outline"
+                className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              >
+                View Vehicle Status
+              </Button>
+            </VehicleSheet>
+          )}
         </div>
       </div>
 

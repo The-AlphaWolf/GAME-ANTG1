@@ -36,6 +36,46 @@ async function main() {
           level: 1,
           armor: 10,
           fuel: 100,
+          components: {
+            create: [
+              {
+                type: 'ENGINE',
+                name: 'Rusted V8 Engine',
+                durability: 80,
+                maxDurability: 100,
+              },
+              {
+                type: 'CHASSIS',
+                name: 'Van Chassis',
+                durability: 100,
+                maxDurability: 100,
+              },
+              {
+                type: 'TIRES',
+                name: 'Worn All-Terrains',
+                durability: 45,
+                maxDurability: 100,
+              },
+              {
+                type: 'ARMOR',
+                name: 'Scrap Metal Plating',
+                durability: 60,
+                maxDurability: 100,
+              },
+              {
+                type: 'STORAGE',
+                name: 'Trunk Space',
+                durability: 100,
+                maxDurability: 100,
+              },
+              {
+                type: 'FUEL_SYSTEM',
+                name: 'Leaky Gas Tank',
+                durability: 90,
+                maxDurability: 100,
+              },
+            ],
+          },
         },
       },
     },
