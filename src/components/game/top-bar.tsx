@@ -1,7 +1,7 @@
 import { Cloud, MapPin, Skull } from 'lucide-react';
-// removed Badge
+import { Player } from '@prisma/client';
 
-export function TopBar() {
+export function TopBar({ player }: { player?: Player }) {
   return (
     <div className="flex items-center gap-6 w-full text-sm">
       <div className="flex items-center gap-2">
@@ -17,7 +17,7 @@ export function TopBar() {
       <div className="flex items-center gap-2 text-emerald-500 ml-auto md:ml-0">
         <MapPin className="h-4 w-4" />
         <span className="truncate max-w-[150px] md:max-w-none">
-          Highway 17, KM 500
+          Highway 17, Mile {player?.distanceTraveled ?? 0}
         </span>
       </div>
 

@@ -45,7 +45,7 @@ export default async function Home() {
 
   return (
     <HudLayout
-      topBar={<TopBar />}
+      topBar={<TopBar player={player} />}
       leftPanel={<VitalsPanel player={player} />}
       centerPanel={
         <NarrativeConsole

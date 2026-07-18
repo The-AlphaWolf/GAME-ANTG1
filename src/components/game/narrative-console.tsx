@@ -4,13 +4,14 @@ import { useState, useTransition } from 'react';
 import { ActionFeed } from './action-feed';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Send, Loader2, Sword } from 'lucide-react';
+import { Send, Loader2, Sword, Map, Search } from 'lucide-react';
 import { submitAction } from '@/actions/game';
 import {
   executeCombatTurn,
   CombatAction,
   initiateCombat,
 } from '@/actions/combat';
+import { explore } from '@/actions/exploration';
 import { EventLog, ActiveEncounter } from '@prisma/client';
 import { Progress } from '@/components/ui/progress';
 
@@ -49,6 +50,12 @@ export function NarrativeConsole({
     });
   };
 
+  const handleExplore = () => {
+    startTransition(async () => {
+      await explore();
+    });
+  };
+
   const handleSpawnEnemy = () => {
     startTransition(async () => {
       await initiateCombat('Wasteland Goblin', 50, 12);
@@ -82,7 +89,27 @@ export function NarrativeConsole({
             />
           </div>
         ) : (
-          <div className="flex justify-end">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              onClick={handleExplore}
+              disabled={isPending}
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Map className="h-4 w-4 mr-2" />
+              )}
+              Drive Forward (-5 Fuel)
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              Scavenge Area
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -90,7 +117,7 @@ export function NarrativeConsole({
               disabled={isPending}
               className="text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300"
             >
-              [DEV] Spawn Enemy
+              [DEV]
             </Button>
           </div>
         )}
