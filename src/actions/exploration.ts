@@ -62,7 +62,10 @@ export async function explore() {
         // Give 1-3 Scrap Metal
         scavengedAmount = Math.floor(Math.random() * 3) + 1;
         const existingScrap = player.inventory.find(
-          (i) => i.baseItemId === 'Scrap Metal'
+          (i) =>
+            i.baseItemId === 'Scrap Metal' &&
+            i.rarity === 'COMMON' &&
+            !i.isUpgraded
         );
 
         if (existingScrap) {

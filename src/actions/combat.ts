@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { progressQuests } from '@/actions/quests';
+import { getRarityMultiplier } from '@/lib/game/rarity';
 
 export async function initiateCombat(
   enemyName: string,
@@ -84,7 +85,12 @@ export async function executeCombatTurn(action: CombatAction) {
         (i) => i.equipSlot === 'WEAPON'
       );
       // Simplified damage logic: 10 base damage + level + weapon modifier
-      const baseAttack = 10 + player.level + (equippedWeapon ? 15 : 0);
+      let weaponDamage = 0;
+      if (equippedWeapon) {
+        // @ts-expect-error - Prisma might still cache old type locally
+        weaponDamage = 15 * getRarityMultiplier(equippedWeapon.rarity);
+      }
+      const baseAttack = Math.floor(10 + player.level + weaponDamage);
 
       switch (action) {
         case 'ATTACK':

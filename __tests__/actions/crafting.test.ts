@@ -96,8 +96,20 @@ describe('Crafting Actions', () => {
     (prisma.player.findUnique as Mock).mockResolvedValue({
       id: 'p1',
       inventory: [
-        { instanceId: 'i1', baseItemId: 'Scrap Metal', quantity: 15 },
-        { instanceId: 'i2', baseItemId: 'Scrap Armor', quantity: 1 },
+        {
+          instanceId: 'i1',
+          baseItemId: 'Scrap Metal',
+          quantity: 15,
+          rarity: 'COMMON',
+          isUpgraded: false,
+        },
+        {
+          instanceId: 'i2',
+          baseItemId: 'Scrap Armor',
+          quantity: 1,
+          rarity: 'COMMON',
+          isUpgraded: false,
+        },
       ],
     });
 

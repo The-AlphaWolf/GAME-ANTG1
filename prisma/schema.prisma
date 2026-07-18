@@ -101,6 +101,8 @@ model Player {
   isAlive     Boolean  @default(true)
   distanceTraveled Int @default(0)
   credits     Int      @default(0)
+  upgradeCharges Int   @default(6)
+  lastUpgradeReset DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -108,6 +110,18 @@ model Player {
   inventory       PlayerInventory[]
   activeEncounter ActiveEncounter?
   quests          ActiveQuest[]
+}
+
+enum RarityTier {
+  COMMON
+  UNCOMMON
+  SILVER
+  GOLD
+  ORANGE
+  PURPLE
+  BLACK
+  RED
+  MYTHICAL
 }
 
 model Vehicle {
@@ -139,7 +153,8 @@ model VehicleComponent {
   vehicle        Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   type           ComponentType
   name           String
-  rarity         Int           @default(1)
+  rarity         RarityTier    @default(COMMON)
+  isUpgraded     Boolean       @default(false)
   durability     Float         @default(100.0)
   maxDurability  Float         @default(100.0)
 
@@ -150,18 +165,18 @@ model VehicleComponent {
 }
 
 model PlayerInventory {
-  instanceId      String    @id @default(uuid())
+  instanceId      String      @id @default(uuid())
   playerId        String
-  player          Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player          Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   baseItemId      String
-  rarity          Int       @default(1)
-  quantity        Int       @default(1)
-  currentDurability Float   @default(100.0)
-  hasBeenUpgraded Boolean   @default(false)
-  equipSlot       String?   // "WEAPON", "HEAD", "CHEST", "LEGS", or null
+  rarity          RarityTier  @default(COMMON)
+  quantity        Int         @default(1)
+  currentDurability Float     @default(100.0)
+  isUpgraded      Boolean     @default(false)
+  equipSlot       String?     // "WEAPON", "HEAD", "CHEST", "LEGS", or null
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@index([playerId, equipSlot])
 }

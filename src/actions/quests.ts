@@ -103,6 +103,8 @@ export async function turnInQuest(questId: string) {
             where: {
               playerId: player.id,
               baseItemId: item.itemId,
+              rarity: 'COMMON',
+              isUpgraded: false,
               equipSlot: null,
             },
           });

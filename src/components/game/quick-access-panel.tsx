@@ -1,5 +1,13 @@
 import { Separator } from '@/components/ui/separator';
-import { Package, Settings, Car, Hammer, Send, ScrollText } from 'lucide-react';
+import {
+  Package,
+  Settings,
+  Car,
+  Hammer,
+  Send,
+  ScrollText,
+  Sparkles,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -34,6 +42,21 @@ export function QuickAccessPanel({
 
   return (
     <div className="p-4 flex flex-col h-full gap-6 overflow-y-auto custom-scrollbar">
+      {/* Talent Summary */}
+      <div className="bg-gradient-to-br from-purple-900/40 via-red-900/20 to-zinc-950 border border-purple-900/50 rounded-lg p-3">
+        <h3 className="text-xs font-bold text-purple-400 tracking-wider mb-2 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> SSS TALENT: UPGRADE
+          </span>
+          <span className="text-zinc-300 font-mono text-[10px] bg-black/50 px-2 py-0.5 rounded">
+            {player.upgradeCharges}/6 CHARGES
+          </span>
+        </h3>
+        <p className="text-[10px] text-zinc-400">
+          Enhance items to higher rarities. Charges reset at midnight.
+        </p>
+      </div>
+
       {/* Inventory Mini */}
       <div>
         <h3 className="text-xs font-bold text-zinc-500 tracking-wider mb-3 flex items-center gap-2">

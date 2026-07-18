@@ -50,7 +50,10 @@ export async function craftItem(recipeId: string) {
 
       // 2. Add crafted item
       const existingOutput = player.inventory.find(
-        (i) => i.baseItemId === recipe.outputItemId
+        (i) =>
+          i.baseItemId === recipe.outputItemId &&
+          i.rarity === 'COMMON' &&
+          !i.isUpgraded
       );
 
       if (existingOutput) {

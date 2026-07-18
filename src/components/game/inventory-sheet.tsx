@@ -14,7 +14,9 @@ import { PlayerInventory } from '@prisma/client';
 import { equipItem, dropItem } from '@/actions/inventory';
 import { sellItem } from '@/actions/economy';
 import { getItemPrice } from '@/lib/game/economy';
-import { Loader2, Package, Sword, X, Coins } from 'lucide-react';
+import { Loader2, Package, Sword, X, Coins, Sparkles } from 'lucide-react';
+import { upgradeTalent } from '@/actions/talent';
+import { RARITY_COLORS } from '@/lib/game/rarity';
 
 type EquipSlot = 'WEAPON' | 'HEAD' | 'CHEST' | 'LEGS' | null;
 
@@ -43,21 +45,15 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
     });
   };
 
-  const getRarityColor = (rarity: number) => {
-    switch (rarity) {
-      case 1:
-        return 'text-zinc-400';
-      case 2:
-        return 'text-green-400';
-      case 3:
-        return 'text-blue-400';
-      case 4:
-        return 'text-purple-400';
-      case 5:
-        return 'text-yellow-400';
-      default:
-        return 'text-zinc-400';
-    }
+  const handleUpgrade = (instanceId: string) => {
+    startTransition(async () => {
+      const result = await upgradeTalent(instanceId, 'inventory');
+      if (result.error) {
+        console.error(result.error);
+      } else {
+        console.log(result.message);
+      }
+    });
   };
 
   return (
@@ -92,7 +88,7 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                   <div className="flex justify-between items-start">
                     <div>
                       <h4
-                        className={`font-medium ${getRarityColor(item.rarity)}`}
+                        className={`font-medium ${RARITY_COLORS[item.rarity as keyof typeof RARITY_COLORS]}`}
                       >
                         {item.baseItemId}{' '}
                         {item.quantity > 1 ? `x${item.quantity}` : ''}
@@ -152,8 +148,25 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                           <Loader2 className="h-3 w-3 animate-spin mr-1" />
                         ) : (
                           <Coins className="h-3 w-3 mr-1" />
-                        )}{' '}
+                        )}
                         Sell ({getItemPrice(item.baseItemId)} EC)
+                      </Button>
+                    )}
+
+                    {!item.isUpgraded && item.rarity !== 'MYTHICAL' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={isPending}
+                        onClick={() => handleUpgrade(item.instanceId)}
+                        className="h-7 text-xs bg-purple-900/50 hover:bg-purple-800/50 text-purple-200 border border-purple-500/30"
+                      >
+                        {isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Sparkles className="h-3 w-3 mr-1" />
+                        )}
+                        Upgrade
                       </Button>
                     )}
 
