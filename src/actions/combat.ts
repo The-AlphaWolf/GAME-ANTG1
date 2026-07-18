@@ -3,6 +3,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { progressQuests } from '@/actions/quests';
 
 export async function initiateCombat(
   enemyName: string,
@@ -70,6 +71,8 @@ export async function executeCombatTurn(action: CombatAction) {
   const encounter = player.activeEncounter;
 
   try {
+    let enemyDead = false;
+
     await prisma.$transaction(async (tx) => {
       let playerDamage = 0;
       let enemyDamage = 0;
@@ -114,6 +117,7 @@ export async function executeCombatTurn(action: CombatAction) {
       if (newEnemyHp <= 0) {
         narrativeText += ` You defeated the ${encounter.enemyName}!`;
         encounterEnded = true;
+        enemyDead = true;
       }
 
       // Update Player
@@ -154,6 +158,10 @@ export async function executeCombatTurn(action: CombatAction) {
         });
       }
     });
+
+    if (enemyDead) {
+      await progressQuests(player.id, 'KILL', encounter.enemyName, 1);
+    }
 
     revalidatePath('/');
     return { success: true };

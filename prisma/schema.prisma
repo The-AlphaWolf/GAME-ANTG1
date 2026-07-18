@@ -107,6 +107,7 @@ model Player {
   vehicle         Vehicle?
   inventory       PlayerInventory[]
   activeEncounter ActiveEncounter?
+  quests          ActiveQuest[]
 }
 
 model Vehicle {
@@ -198,4 +199,17 @@ model ChatMessage {
   sender    String
   message   String
   createdAt DateTime @default(now())
+}
+
+model ActiveQuest {
+  id          String   @id @default(uuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  questId     String
+  progress    Int      @default(0)
+  status      String   @default("ACTIVE") // ACTIVE, COMPLETED, FAILED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([playerId, questId])
 }

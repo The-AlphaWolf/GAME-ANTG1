@@ -1,5 +1,5 @@
 import { Separator } from '@/components/ui/separator';
-import { Package, Settings, Car, Hammer, Send } from 'lucide-react';
+import { Package, Settings, Car, Hammer, Send, ScrollText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -9,15 +9,18 @@ import {
   Vehicle,
   VehicleComponent,
   ChatMessage,
+  ActiveQuest,
 } from '@prisma/client';
 import { InventorySheet } from './inventory-sheet';
 import { VehicleSheet } from './vehicle-sheet';
 import { CraftingSheet } from './crafting-sheet';
+import { QuestLogSheet } from './quest-log';
 import { sendMessage } from '@/actions/chat';
 
 type PlayerWithInventory = Player & {
   inventory: PlayerInventory[];
   vehicle?: (Vehicle & { components: VehicleComponent[] }) | null;
+  quests: ActiveQuest[];
 };
 
 export function QuickAccessPanel({
@@ -116,6 +119,26 @@ export function QuickAccessPanel({
             Open Crafting Bench
           </Button>
         </CraftingSheet>
+      </div>
+
+      <Separator className="bg-zinc-800" />
+
+      {/* Quest System */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
+          <ScrollText className="h-4 w-4" /> QUEST LOG
+        </h3>
+        <QuestLogSheet player={player}>
+          <Button
+            variant="outline"
+            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 relative"
+          >
+            Open Bounty Board
+            {player.quests.filter((q) => q.status === 'ACTIVE').length > 0 && (
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500" />
+            )}
+          </Button>
+        </QuestLogSheet>
       </div>
 
       <Separator className="bg-zinc-800" />

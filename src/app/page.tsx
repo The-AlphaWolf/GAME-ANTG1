@@ -21,6 +21,7 @@ export default async function Home() {
       inventory: true,
       activeEncounter: true,
       vehicle: { include: { components: true } },
+      quests: true,
     },
   });
 

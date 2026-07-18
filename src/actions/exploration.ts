@@ -3,6 +3,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { progressQuests } from '@/actions/quests';
 
 const FUEL_COST = 5;
 const DISTANCE_GAIN = 10;
@@ -29,6 +30,7 @@ export async function explore() {
   // 0.8 - 1.0: Combat
   const roll = Math.random();
   let eventType = 'empty';
+  let scavengedAmount = 0;
   if (roll >= 0.8) eventType = 'combat';
   else if (roll >= 0.5) eventType = 'loot';
 
@@ -58,7 +60,7 @@ export async function explore() {
         });
       } else if (eventType === 'loot') {
         // Give 1-3 Scrap Metal
-        const amount = Math.floor(Math.random() * 3) + 1;
+        scavengedAmount = Math.floor(Math.random() * 3) + 1;
         const existingScrap = player.inventory.find(
           (i) => i.baseItemId === 'Scrap Metal'
         );
@@ -66,14 +68,14 @@ export async function explore() {
         if (existingScrap) {
           await tx.playerInventory.update({
             where: { instanceId: existingScrap.instanceId },
-            data: { quantity: existingScrap.quantity + amount },
+            data: { quantity: existingScrap.quantity + scavengedAmount },
           });
         } else {
           await tx.playerInventory.create({
             data: {
               playerId: player.id,
               baseItemId: 'Scrap Metal',
-              quantity: amount,
+              quantity: scavengedAmount,
             },
           });
         }
@@ -83,7 +85,7 @@ export async function explore() {
             playerId: player.id,
             eventType: 'SYSTEM_NARRATIVE',
             payload: {
-              text: `You spot an abandoned car and scavenge ${amount} Scrap Metal.`,
+              text: `You spot an abandoned car and scavenge ${scavengedAmount} Scrap Metal.`,
             },
           },
         });
@@ -110,6 +112,10 @@ export async function explore() {
         });
       }
     });
+
+    if (eventType === 'loot' && scavengedAmount > 0) {
+      await progressQuests(player.id, 'GATHER', 'Scrap Metal', scavengedAmount);
+    }
 
     revalidatePath('/');
     return { success: true, eventType };
