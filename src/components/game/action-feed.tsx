@@ -9,12 +9,8 @@ export function ActionFeed({ events }: { events: EventLog[] }) {
         {events.map((e) => {
           // Parse JSONB payload safely
 
-          const payload =
-            e.payload && typeof e.payload === 'object'
-              ? (e.payload as Record<string, unknown>)
-              : {};
-
-          const text = payload.text || payload.action || 'Unknown event';
+          const payload = (e.payload as Record<string, unknown>) || {};
+          const text = (payload.text as string) || 'Unknown event';
           const time = new Date(e.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',

@@ -103,6 +103,7 @@ model Player {
   updatedAt   DateTime @updatedAt
   
   vehicle     Vehicle?
+  inventory   PlayerInventory[]
 }
 
 model Vehicle {
@@ -115,6 +116,23 @@ model Vehicle {
   fuel        Int      @default(100)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model PlayerInventory {
+  instanceId      String    @id @default(uuid())
+  playerId        String
+  player          Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  baseItemId      String
+  rarity          Int       @default(1)
+  quantity        Int       @default(1)
+  currentDurability Float   @default(100.0)
+  hasBeenUpgraded Boolean   @default(false)
+  equipSlot       String?   // "WEAPON", "HEAD", "CHEST", "LEGS", or null
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([playerId, equipSlot])
 }
 
 model WorldObject {
