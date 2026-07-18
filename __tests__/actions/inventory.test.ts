@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { equipItem, dropItem } from '@/actions/inventory';
 import { prisma } from '@/lib/db';
 import { auth } from '@/auth';
@@ -37,26 +37,26 @@ describe('Inventory Actions', () => {
 
   describe('equipItem', () => {
     it('should fail if user is not authenticated', async () => {
-      (auth as vi.Mock).mockResolvedValue(null);
+      (auth as Mock).mockResolvedValue(null);
       const result = await equipItem('item123', 'WEAPON');
       expect(result).toEqual({ error: 'Unauthorized' });
     });
 
     it('should successfully equip an item', async () => {
-      (auth as vi.Mock).mockResolvedValue({ user: { name: 'testuser' } });
+      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
 
-      (prisma.player.findUnique as vi.Mock).mockResolvedValue({
+      (prisma.player.findUnique as Mock).mockResolvedValue({
         id: 'player123',
       });
 
-      (prisma.playerInventory.findUnique as vi.Mock).mockResolvedValue({
+      (prisma.playerInventory.findUnique as Mock).mockResolvedValue({
         instanceId: 'item123',
         playerId: 'player123',
         baseItemId: 'rusty_sword',
       });
 
       // Mock transaction implementation to just run the callback
-      (prisma.$transaction as vi.Mock).mockImplementation(async (callback) => {
+      (prisma.$transaction as Mock).mockImplementation(async (callback) => {
         return callback(prisma);
       });
 
@@ -77,19 +77,19 @@ describe('Inventory Actions', () => {
 
   describe('dropItem', () => {
     it('should successfully drop an item', async () => {
-      (auth as vi.Mock).mockResolvedValue({ user: { name: 'testuser' } });
+      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
 
-      (prisma.player.findUnique as vi.Mock).mockResolvedValue({
+      (prisma.player.findUnique as Mock).mockResolvedValue({
         id: 'player123',
       });
 
-      (prisma.playerInventory.findUnique as vi.Mock).mockResolvedValue({
+      (prisma.playerInventory.findUnique as Mock).mockResolvedValue({
         instanceId: 'item123',
         playerId: 'player123',
         baseItemId: 'rusty_sword',
       });
 
-      (prisma.$transaction as vi.Mock).mockImplementation(async (callback) => {
+      (prisma.$transaction as Mock).mockImplementation(async (callback) => {
         return callback(prisma);
       });
 
