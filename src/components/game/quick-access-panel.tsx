@@ -3,7 +3,9 @@ import { Badge } from '@/components/ui/badge';
 import { Package, Shield, Settings } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
-export function QuickAccessPanel() {
+import { Player } from '@prisma/client';
+
+export function QuickAccessPanel({ player }: { player: Player }) {
   return (
     <div className="p-4 flex flex-col h-full gap-6 overflow-y-auto custom-scrollbar">
       {/* Inventory Mini */}
@@ -50,7 +52,7 @@ export function QuickAccessPanel() {
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="flex items-center gap-2 text-zinc-400">
-                <Shield className="h-4 w-4" /> Chassis Armor
+                <Shield className="h-4 w-4" /> Chassis Armor (Lv {player.level})
               </span>
               <span className="font-medium text-zinc-300">10/10</span>
             </div>
