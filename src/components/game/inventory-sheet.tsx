@@ -149,7 +149,7 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                         ) : (
                           <Coins className="h-3 w-3 mr-1" />
                         )}
-                        Sell ({getItemPrice(item.baseItemId)} EC)
+                        Sell ({getItemPrice(item.baseItemId, item.rarity)} EC)
                       </Button>
                     )}
 

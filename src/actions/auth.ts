@@ -4,6 +4,7 @@ import { signIn, signOut } from '@/auth';
 import { prisma } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { AuthError } from 'next-auth';
+import { grantStarterChest } from '@/lib/game/starter-chest';
 
 export async function loginAction(formData: FormData) {
   const email = formData.get('email') as string;
@@ -86,6 +87,9 @@ export async function registerAction(formData: FormData) {
           payload: { username, email },
         },
       });
+
+      // Every survivor starts with a beginner treasure chest of random quality
+      await grantStarterChest(tx, player.id);
     });
 
     return { success: true };

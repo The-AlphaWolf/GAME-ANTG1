@@ -50,7 +50,11 @@ describe('Auth Actions', () => {
     (prisma.$transaction as any).mockImplementation(async (callback: any) => {
       return callback({
         user: { create: vi.fn().mockResolvedValue({ id: 'user-1' }) },
-        player: { create: vi.fn().mockResolvedValue({ id: 'player-1' }) },
+        player: {
+          create: vi.fn().mockResolvedValue({ id: 'player-1' }),
+          update: vi.fn(),
+        },
+        playerInventory: { create: vi.fn() },
         eventLog: { create: vi.fn() },
       });
     });

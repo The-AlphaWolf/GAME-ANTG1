@@ -111,7 +111,7 @@ export async function executeCombatTurn(action: CombatAction) {
             narrativeText = `You successfully fled from the ${encounter.enemyName}!`;
             encounterEnded = true;
           } else {
-            enemyDamage = encounter.enemyAttack * 1.5; // Flee failure penalty
+            enemyDamage = Math.floor(encounter.enemyAttack * 1.2); // Flee failure penalty
             narrativeText = `You failed to flee! The ${encounter.enemyName} strikes your exposed back for ${enemyDamage} damage!`;
           }
           break;
@@ -121,9 +121,11 @@ export async function executeCombatTurn(action: CombatAction) {
       const newEnemyHp = Math.max(0, encounter.enemyHp - playerDamage);
       const newPlayerHp = Math.max(0, Math.floor(player.health - enemyDamage));
       const playerDied = newPlayerHp <= 0;
+      let bounty = 0;
 
       if (newEnemyHp <= 0 && !playerDied) {
-        narrativeText += ` You defeated the ${encounter.enemyName}!`;
+        bounty = 15 + Math.floor(Math.random() * 11); // 15-25 EC
+        narrativeText += ` You defeated the ${encounter.enemyName} and loot ${bounty} EC from the wreckage!`;
         encounterEnded = true;
         enemyDead = true;
       }
@@ -136,7 +138,11 @@ export async function executeCombatTurn(action: CombatAction) {
       // Update Player
       await tx.player.update({
         where: { id: player.id },
-        data: { health: newPlayerHp, isAlive: !playerDied },
+        data: {
+          health: newPlayerHp,
+          isAlive: !playerDied,
+          ...(bounty > 0 && { credits: { increment: bounty } }),
+        },
       });
 
       // Log combat turn event

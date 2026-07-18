@@ -73,7 +73,7 @@ export function NarrativeConsole({
 
   const handleSpawnEnemy = () => {
     startTransition(async () => {
-      await initiateCombat('Wasteland Goblin', 50, 12);
+      await initiateCombat('Wasteland Goblin', 40, 8);
     });
   };
 

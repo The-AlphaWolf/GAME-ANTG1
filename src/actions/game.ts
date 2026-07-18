@@ -3,6 +3,7 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { grantStarterChest } from '@/lib/game/starter-chest';
 
 export async function submitAction(formData: FormData) {
   const session = await auth();
@@ -125,6 +126,9 @@ export async function restartGame() {
           },
         },
       });
+
+      // Fresh start comes with a fresh beginner treasure chest
+      await grantStarterChest(tx, player.id);
     });
   } catch (error) {
     console.error('Failed to restart game:', error);

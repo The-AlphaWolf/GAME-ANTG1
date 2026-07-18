@@ -27,14 +27,14 @@ export async function explore() {
     return { error: 'Not enough fuel to drive' };
 
   // Roll Encounter
-  // 0.0 - 0.5: Empty
-  // 0.5 - 0.8: Loot
-  // 0.8 - 1.0: Combat
+  // 0.0 - 0.45: Empty
+  // 0.45 - 0.85: Loot
+  // 0.85 - 1.0: Combat
   const roll = Math.random();
   let eventType = 'empty';
   let scavengedAmount = 0;
-  if (roll >= 0.8) eventType = 'combat';
-  else if (roll >= 0.5) eventType = 'loot';
+  if (roll >= 0.85) eventType = 'combat';
+  else if (roll >= 0.45) eventType = 'loot';
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -96,7 +96,7 @@ export async function explore() {
         });
       } else if (eventType === 'combat') {
         const enemyName = 'Highway Raider';
-        const hp = 50 + Math.floor(Math.random() * 20); // 50-70
+        const hp = 35 + Math.floor(Math.random() * 15); // 35-50
 
         await tx.activeEncounter.create({
           data: {
@@ -104,7 +104,7 @@ export async function explore() {
             enemyName,
             enemyHp: hp,
             enemyMaxHp: hp,
-            enemyAttack: 12,
+            enemyAttack: 8,
           },
         });
 
@@ -148,12 +148,12 @@ export async function scavenge() {
 
   // Roll Outcome
   // 0.0 - 0.3: Nothing
-  // 0.3 - 0.85: Loot
-  // 0.85 - 1.0: Combat
+  // 0.3 - 0.9: Loot
+  // 0.9 - 1.0: Combat
   const roll = Math.random();
   let eventType = 'empty';
   let scavengedAmount = 0;
-  if (roll >= 0.85) eventType = 'combat';
+  if (roll >= 0.9) eventType = 'combat';
   else if (roll >= 0.3) eventType = 'loot';
 
   try {
@@ -210,7 +210,7 @@ export async function scavenge() {
         });
       } else if (eventType === 'combat') {
         const enemyName = 'Feral Scavenger';
-        const hp = 40 + Math.floor(Math.random() * 15); // 40-55
+        const hp = 25 + Math.floor(Math.random() * 10); // 25-35
 
         await tx.activeEncounter.create({
           data: {
@@ -218,7 +218,7 @@ export async function scavenge() {
             enemyName,
             enemyHp: hp,
             enemyMaxHp: hp,
-            enemyAttack: 10,
+            enemyAttack: 6,
           },
         });
 

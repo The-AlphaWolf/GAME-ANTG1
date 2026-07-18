@@ -21,7 +21,7 @@ export async function sellItem(instanceId: string) {
 
   if (itemToSell.equipSlot) return { error: 'Cannot sell equipped items' };
 
-  const itemPrice = getItemPrice(itemToSell.baseItemId);
+  const itemPrice = getItemPrice(itemToSell.baseItemId, itemToSell.rarity);
 
   try {
     await prisma.$transaction(async (tx) => {

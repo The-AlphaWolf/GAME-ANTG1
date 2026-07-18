@@ -7,6 +7,10 @@ vi.mock('@/auth', () => ({
   auth: vi.fn(),
 }));
 
+vi.mock('@/actions/quests', () => ({
+  progressQuests: vi.fn(),
+}));
+
 vi.mock('@/lib/db', () => ({
   prisma: {
     player: {

@@ -1,3 +1,6 @@
+import { RarityTier } from '@prisma/client';
+import { getRarityMultiplier } from './rarity';
+
 // Defines the base Energy Credit (EC) value for items
 export const ITEM_PRICES: Record<string, number> = {
   'Scrap Metal': 10,
@@ -19,8 +22,12 @@ export const ITEM_PRICES: Record<string, number> = {
   Tire: 120,
 };
 
-export function getItemPrice(baseItemId: string): number {
-  return ITEM_PRICES[baseItemId] || 5; // Default fallback price is 5 EC
+export function getItemPrice(baseItemId: string, rarity?: RarityTier): number {
+  const basePrice = ITEM_PRICES[baseItemId] || 5; // Default fallback price is 5 EC
+  // Higher rarity items are worth more (e.g. upgraded via the SSS Talent)
+  return rarity
+    ? Math.floor(basePrice * getRarityMultiplier(rarity))
+    : basePrice;
 }
 
 // ------------------------------------------------------
