@@ -17,7 +17,7 @@ export default async function Home() {
   // Use the session name (username) to find the player
   const player = await prisma.player.findUnique({
     where: { username: session.user.name || '' },
-    include: { inventory: true },
+    include: { inventory: true, activeEncounter: true },
   });
 
   if (!player) {
@@ -43,7 +43,12 @@ export default async function Home() {
     <HudLayout
       topBar={<TopBar />}
       leftPanel={<VitalsPanel player={player} />}
-      centerPanel={<NarrativeConsole events={sortedEvents} />}
+      centerPanel={
+        <NarrativeConsole
+          events={sortedEvents}
+          activeEncounter={player.activeEncounter}
+        />
+      }
       rightPanel={<QuickAccessPanel player={player} />}
     />
   );

@@ -102,8 +102,9 @@ model Player {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  vehicle     Vehicle?
-  inventory   PlayerInventory[]
+  vehicle         Vehicle?
+  inventory       PlayerInventory[]
+  activeEncounter ActiveEncounter?
 }
 
 model Vehicle {
@@ -133,6 +134,20 @@ model PlayerInventory {
   updatedAt       DateTime  @updatedAt
 
   @@index([playerId, equipSlot])
+}
+
+model ActiveEncounter {
+  id              String    @id @default(uuid())
+  playerId        String    @unique
+  player          Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  enemyName       String
+  enemyHp         Float
+  enemyMaxHp      Float
+  enemyAttack     Float
+  statusEffects   Json      @default("{}")
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model WorldObject {

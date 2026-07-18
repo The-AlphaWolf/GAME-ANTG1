@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PlayerInventory } from '@prisma/client';
 import { equipItem, dropItem } from '@/actions/inventory';
-import { Loader2, Package, Shield, Sword, X } from 'lucide-react';
+import { Loader2, Package, Sword, X } from 'lucide-react';
 
 type EquipSlot = 'WEAPON' | 'HEAD' | 'CHEST' | 'LEGS' | null;
 
