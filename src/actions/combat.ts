@@ -87,7 +87,6 @@ export async function executeCombatTurn(action: CombatAction) {
       // Simplified damage logic: 10 base damage + level + weapon modifier
       let weaponDamage = 0;
       if (equippedWeapon) {
-        // @ts-expect-error - Prisma might still cache old type locally
         weaponDamage = 15 * getRarityMultiplier(equippedWeapon.rarity);
       }
       const baseAttack = Math.floor(10 + player.level + weaponDamage);
