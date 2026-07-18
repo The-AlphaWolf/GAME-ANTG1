@@ -40,8 +40,14 @@ export default async function Home() {
     take: 20,
   });
 
+  const recentChats = await prisma.chatMessage.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+
   // Since we fetch desc to get latest, we should reverse to display chronologically
   const sortedEvents = recentEvents.reverse();
+  const sortedChats = recentChats.reverse();
 
   return (
     <HudLayout
@@ -53,7 +59,9 @@ export default async function Home() {
           activeEncounter={player.activeEncounter}
         />
       }
-      rightPanel={<QuickAccessPanel player={player} />}
+      rightPanel={
+        <QuickAccessPanel player={player} chatMessages={sortedChats} />
+      }
     />
   );
 }

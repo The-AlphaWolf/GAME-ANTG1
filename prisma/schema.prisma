@@ -191,3 +191,11 @@ model WorldObject {
 
   @@index([sectorId])
 }
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  channel   String   @default("WORLD") // WORLD, SYSTEM, TRADE
+  sender    String
+  message   String
+  createdAt DateTime @default(now())
+}

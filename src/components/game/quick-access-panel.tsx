@@ -1,23 +1,32 @@
 import { Separator } from '@/components/ui/separator';
-import { Package, Settings, Car, Hammer } from 'lucide-react';
+import { Package, Settings, Car, Hammer, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 import {
   Player,
   PlayerInventory,
   Vehicle,
   VehicleComponent,
+  ChatMessage,
 } from '@prisma/client';
 import { InventorySheet } from './inventory-sheet';
 import { VehicleSheet } from './vehicle-sheet';
 import { CraftingSheet } from './crafting-sheet';
+import { sendMessage } from '@/actions/chat';
 
 type PlayerWithInventory = Player & {
   inventory: PlayerInventory[];
   vehicle?: (Vehicle & { components: VehicleComponent[] }) | null;
 };
 
-export function QuickAccessPanel({ player }: { player: PlayerWithInventory }) {
+export function QuickAccessPanel({
+  player,
+  chatMessages = [],
+}: {
+  player: PlayerWithInventory;
+  chatMessages?: ChatMessage[];
+}) {
   const equippedWeapon = player.inventory.find((i) => i.equipSlot === 'WEAPON');
 
   return (
@@ -112,24 +121,62 @@ export function QuickAccessPanel({ player }: { player: PlayerWithInventory }) {
       <Separator className="bg-zinc-800" />
 
       {/* World Chat Mini */}
-      <div className="flex-1 flex flex-col min-h-[150px]">
+      <div className="flex-1 flex flex-col min-h-[250px] max-h-[300px]">
         <h3 className="text-xs font-bold text-zinc-500 tracking-wider mb-2">
           WORLD RADIO
         </h3>
-        <div className="flex-1 bg-zinc-900/50 rounded-md border border-zinc-800 p-2 overflow-y-auto text-xs space-y-2 custom-scrollbar">
-          <p>
-            <span className="text-blue-400 font-bold">[Scav_99]:</span> Anyone
-            near Sector 4?
-          </p>
-          <p>
-            <span className="text-zinc-500 font-bold">[System]:</span> Radio
-            silence. Static crackles.
-          </p>
-          <p>
-            <span className="text-purple-400 font-bold">[Wolf]:</span> Stay away
-            from the bridge.
-          </p>
+        <div className="flex-1 bg-zinc-900/50 rounded-t-md border border-zinc-800 border-b-0 p-2 overflow-y-auto text-xs space-y-2 custom-scrollbar flex flex-col-reverse">
+          <div className="space-y-2">
+            {chatMessages.length === 0 ? (
+              <p className="text-zinc-500 italic text-center py-4">
+                Radio silence...
+              </p>
+            ) : (
+              chatMessages.map((msg) => (
+                <p key={msg.id} className="break-words">
+                  <span
+                    className={`font-bold ${
+                      msg.sender === 'System'
+                        ? 'text-red-400'
+                        : msg.sender === player.username
+                          ? 'text-emerald-400'
+                          : 'text-blue-400'
+                    }`}
+                  >
+                    [{msg.sender}]:
+                  </span>{' '}
+                  <span className="text-zinc-300">{msg.message}</span>
+                </p>
+              ))
+            )}
+          </div>
         </div>
+        <form
+          action={async (formData) => {
+            'use server';
+            const message = formData.get('message') as string;
+            if (message) {
+              await sendMessage(message);
+            }
+          }}
+          className="flex bg-zinc-900/80 rounded-b-md border border-zinc-800 p-1"
+        >
+          <Input
+            name="message"
+            placeholder="Broadcast to world..."
+            className="flex-1 h-8 bg-transparent border-none text-xs focus-visible:ring-0 px-2"
+            autoComplete="off"
+            maxLength={200}
+          />
+          <Button
+            type="submit"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-zinc-400 hover:text-white"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </form>
       </div>
     </div>
   );
