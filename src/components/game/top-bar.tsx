@@ -1,4 +1,4 @@
-import { Cloud, MapPin, Skull } from 'lucide-react';
+import { Cloud, MapPin, Skull, Coins } from 'lucide-react';
 import { Player } from '@prisma/client';
 
 export function TopBar({ player }: { player?: Player }) {
@@ -21,7 +21,12 @@ export function TopBar({ player }: { player?: Player }) {
         </span>
       </div>
 
-      <div className="hidden md:flex items-center gap-2 ml-auto">
+      <div className="hidden md:flex items-center gap-2 text-amber-500 ml-auto mr-4 font-mono font-bold">
+        <Coins className="h-4 w-4" />
+        <span>{player?.credits ?? 0} EC</span>
+      </div>
+
+      <div className="hidden md:flex items-center gap-2">
         <span className="text-zinc-500">THREAT</span>
         <div className="flex gap-1 text-red-500">
           <Skull className="h-4 w-4" />

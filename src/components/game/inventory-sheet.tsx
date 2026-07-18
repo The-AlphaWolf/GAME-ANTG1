@@ -12,7 +12,9 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PlayerInventory } from '@prisma/client';
 import { equipItem, dropItem } from '@/actions/inventory';
-import { Loader2, Package, Sword, X } from 'lucide-react';
+import { sellItem } from '@/actions/economy';
+import { getItemPrice } from '@/lib/game/economy';
+import { Loader2, Package, Sword, X, Coins } from 'lucide-react';
 
 type EquipSlot = 'WEAPON' | 'HEAD' | 'CHEST' | 'LEGS' | null;
 
@@ -32,6 +34,12 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
   const handleDrop = (instanceId: string) => {
     startTransition(async () => {
       await dropItem(instanceId);
+    });
+  };
+
+  const handleSell = (instanceId: string) => {
+    startTransition(async () => {
+      await sellItem(instanceId);
     });
   };
 
@@ -132,6 +140,23 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                       </Button>
                     )}
 
+                    {!item.equipSlot && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isPending}
+                        onClick={() => handleSell(item.instanceId)}
+                        className="h-7 text-xs border-amber-900/50 text-amber-500 hover:bg-amber-950 hover:text-amber-400"
+                      >
+                        {isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Coins className="h-3 w-3 mr-1" />
+                        )}{' '}
+                        Sell ({getItemPrice(item.baseItemId)} EC)
+                      </Button>
+                    )}
+
                     <Button
                       size="sm"
                       variant="ghost"
@@ -140,11 +165,10 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                       className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 ml-auto"
                     >
                       {isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        <X className="h-3 w-3 mr-1" />
-                      )}{' '}
-                      Drop
+                        <X className="h-3 w-3" />
+                      )}
                     </Button>
                   </div>
                 </div>
