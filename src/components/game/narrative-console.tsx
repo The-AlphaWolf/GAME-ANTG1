@@ -12,6 +12,7 @@ import {
   initiateCombat,
 } from '@/actions/combat';
 import { explore, scavenge } from '@/actions/exploration';
+import { NewGameButton } from './new-game-button';
 import { EventLog, ActiveEncounter } from '@prisma/client';
 import { Progress } from '@/components/ui/progress';
 
@@ -94,18 +95,21 @@ export function NarrativeConsole({
               chance. Respawning costs half your EC.
             </p>
           </div>
-          <Button
-            onClick={handleRespawn}
-            disabled={isPending}
-            className="bg-red-900 hover:bg-red-800 text-red-100 border border-red-700"
-          >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <Skull className="h-4 w-4 mr-2" />
-            )}
-            Respawn
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              onClick={handleRespawn}
+              disabled={isPending}
+              className="bg-red-900 hover:bg-red-800 text-red-100 border border-red-700"
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Skull className="h-4 w-4 mr-2" />
+              )}
+              Respawn
+            </Button>
+            <NewGameButton variant="death" />
+          </div>
         </div>
       ) : (
         <div className="p-4 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur shrink-0 z-10 flex flex-col gap-4">

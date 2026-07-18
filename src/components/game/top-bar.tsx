@@ -1,5 +1,6 @@
 import { Cloud, MapPin, Skull, Coins } from 'lucide-react';
 import { Player } from '@prisma/client';
+import { NewGameButton } from './new-game-button';
 
 export function TopBar({ player }: { player?: Player }) {
   return (
@@ -33,6 +34,10 @@ export function TopBar({ player }: { player?: Player }) {
           <Skull className="h-4 w-4" />
           <Skull className="h-4 w-4 opacity-30" />
         </div>
+      </div>
+
+      <div className="hidden md:block">
+        <NewGameButton />
       </div>
     </div>
   );

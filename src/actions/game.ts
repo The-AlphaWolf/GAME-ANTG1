@@ -68,6 +68,73 @@ export async function submitAction(formData: FormData) {
   return { success: true };
 }
 
+export async function restartGame() {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return { error: 'Unauthorized' };
+  }
+
+  const player = await prisma.player.findUnique({
+    where: { username: session.user.name || '' },
+  });
+
+  if (!player) {
+    return { error: 'Player not found' };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Wipe all progress
+      await tx.activeEncounter.deleteMany({ where: { playerId: player.id } });
+      await tx.playerInventory.deleteMany({ where: { playerId: player.id } });
+      await tx.activeQuest.deleteMany({ where: { playerId: player.id } });
+      await tx.eventLog.deleteMany({ where: { playerId: player.id } });
+      await tx.vehicle.deleteMany({ where: { playerId: player.id } });
+
+      // Reset player to a fresh state (schema defaults) with a new starter vehicle
+      await tx.player.update({
+        where: { id: player.id },
+        data: {
+          level: 1,
+          xp: 0,
+          health: 100,
+          energy: 100,
+          hunger: 0,
+          sanity: 100,
+          fatigue: 0,
+          thirst: 0,
+          isAlive: true,
+          distanceTraveled: 0,
+          credits: 0,
+          upgradeCharges: 6,
+          lastUpgradeReset: new Date(),
+          vehicle: {
+            create: {
+              type: 'Common Van',
+            },
+          },
+        },
+      });
+
+      await tx.eventLog.create({
+        data: {
+          playerId: player.id,
+          eventType: 'SYSTEM_NARRATIVE',
+          payload: {
+            text: 'A new journey begins. Your van hums to life on the empty highway, everything you once carried now a memory.',
+          },
+        },
+      });
+    });
+  } catch (error) {
+    console.error('Failed to restart game:', error);
+    return { error: 'Failed to restart game' };
+  }
+
+  revalidatePath('/');
+  return { success: true };
+}
+
 export async function respawn() {
   const session = await auth();
   if (!session?.user?.email) {
