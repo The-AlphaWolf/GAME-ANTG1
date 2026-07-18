@@ -7,6 +7,7 @@ import {
   Send,
   ScrollText,
   Sparkles,
+  Store,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,7 @@ import { InventorySheet } from './inventory-sheet';
 import { VehicleSheet } from './vehicle-sheet';
 import { CraftingSheet } from './crafting-sheet';
 import { QuestLogSheet } from './quest-log';
+import { ShopSheet } from './shop-sheet';
 import { sendMessage } from '@/actions/chat';
 
 type PlayerWithInventory = Player & {
@@ -142,6 +144,23 @@ export function QuickAccessPanel({
             Open Crafting Bench
           </Button>
         </CraftingSheet>
+      </div>
+
+      <Separator className="bg-zinc-800" />
+
+      {/* Trading Post */}
+      <div className="space-y-3">
+        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
+          <Store className="h-4 w-4" /> TRADING POST
+        </h3>
+        <ShopSheet player={player}>
+          <Button
+            variant="outline"
+            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
+          >
+            Open Shop ({player.credits} EC)
+          </Button>
+        </ShopSheet>
       </div>
 
       <Separator className="bg-zinc-800" />
