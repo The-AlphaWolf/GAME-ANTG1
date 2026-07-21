@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { progressQuests } from '@/actions/quests';
 import { getRarityMultiplier } from '@/lib/game/rarity';
+import { maybePruneEventLog } from '@/lib/game/event-log';
 
 export async function initiateCombat(
   enemyName: string,
@@ -58,13 +59,19 @@ export async function initiateCombat(
 
 export type CombatAction = 'ATTACK' | 'DEFEND' | 'FLEE';
 
+const MAX_HEALTH = 100;
+const HEAL_ON_WIN_PCT = 0.1;
+
 export async function executeCombatTurn(action: CombatAction) {
   const session = await auth();
   if (!session?.user?.name) return { error: 'Unauthorized' };
 
   const player = await prisma.player.findUnique({
     where: { username: session.user.name },
-    include: { activeEncounter: true, inventory: true },
+    include: {
+      activeEncounter: true,
+      inventory: { where: { equipSlot: 'WEAPON' } },
+    },
   });
 
   if (!player) return { error: 'Player not found' };
@@ -83,9 +90,7 @@ export async function executeCombatTurn(action: CombatAction) {
       let encounterEnded = false;
 
       // Base stats
-      const equippedWeapon = player.inventory.find(
-        (i) => i.equipSlot === 'WEAPON'
-      );
+      const equippedWeapon = player.inventory[0];
       // Simplified damage logic: 10 base damage + level + weapon modifier
       let weaponDamage = 0;
       if (equippedWeapon) {
@@ -119,13 +124,15 @@ export async function executeCombatTurn(action: CombatAction) {
 
       // Apply damage
       const newEnemyHp = Math.max(0, encounter.enemyHp - playerDamage);
-      const newPlayerHp = Math.max(0, Math.floor(player.health - enemyDamage));
+      let newPlayerHp = Math.max(0, Math.floor(player.health - enemyDamage));
       const playerDied = newPlayerHp <= 0;
       let bounty = 0;
 
       if (newEnemyHp <= 0 && !playerDied) {
         bounty = 15 + Math.floor(Math.random() * 11); // 15-25 EC
-        narrativeText += ` You defeated the ${encounter.enemyName} and loot ${bounty} EC from the wreckage!`;
+        const healAmount = Math.floor(MAX_HEALTH * HEAL_ON_WIN_PCT);
+        newPlayerHp = Math.min(MAX_HEALTH, newPlayerHp + healAmount);
+        narrativeText += ` You defeated the ${encounter.enemyName}, loot ${bounty} EC from the wreckage, and patch up ${healAmount} HP in the aftermath!`;
         encounterEnded = true;
         enemyDead = true;
       }
@@ -135,15 +142,18 @@ export async function executeCombatTurn(action: CombatAction) {
         encounterEnded = true;
       }
 
-      // Update Player
-      await tx.player.update({
-        where: { id: player.id },
+      // Update Player, guarded on the health we actually read (CAS) so a
+      // concurrent double-submit can't overwrite a turn it never saw
+      const playerUpdated = await tx.player.updateMany({
+        where: { id: player.id, health: player.health, isAlive: true },
         data: {
           health: newPlayerHp,
           isAlive: !playerDied,
           ...(bounty > 0 && { credits: { increment: bounty } }),
         },
       });
+      if (playerUpdated.count === 0)
+        throw new Error('Action conflict, please retry');
 
       // Log combat turn event
       await tx.eventLog.create({
@@ -169,13 +179,21 @@ export async function executeCombatTurn(action: CombatAction) {
       });
 
       if (encounterEnded) {
-        await tx.activeEncounter.delete({ where: { id: encounter.id } });
+        const encounterDeleted = await tx.activeEncounter.deleteMany({
+          where: { id: encounter.id, enemyHp: encounter.enemyHp },
+        });
+        if (encounterDeleted.count === 0)
+          throw new Error('Action conflict, please retry');
       } else {
-        await tx.activeEncounter.update({
-          where: { id: encounter.id },
+        const encounterUpdated = await tx.activeEncounter.updateMany({
+          where: { id: encounter.id, enemyHp: encounter.enemyHp },
           data: { enemyHp: newEnemyHp },
         });
+        if (encounterUpdated.count === 0)
+          throw new Error('Action conflict, please retry');
       }
+
+      await maybePruneEventLog(tx, player.id);
     });
 
     if (enemyDead) {
@@ -186,6 +204,11 @@ export async function executeCombatTurn(action: CombatAction) {
     return { success: true };
   } catch (error) {
     console.error('Execute combat turn failed:', error);
-    return { error: 'Failed to execute combat turn' };
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to execute combat turn',
+    };
   }
 }

@@ -4,6 +4,8 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { progressQuests } from '@/actions/quests';
+import { maybePruneEventLog } from '@/lib/game/event-log';
+import { crossedStoryBeats, scaleEnemyStat } from '@/lib/game/story';
 
 const FUEL_COST = 5;
 const DISTANCE_GAIN = 10;
@@ -15,7 +17,17 @@ export async function explore() {
 
   const player = await prisma.player.findUnique({
     where: { username: session.user.name },
-    include: { vehicle: true, activeEncounter: true, inventory: true },
+    include: {
+      vehicle: true,
+      activeEncounter: true,
+      inventory: {
+        where: {
+          baseItemId: 'Scrap Metal',
+          rarity: 'COMMON',
+          isUpgraded: false,
+        },
+      },
+    },
   });
 
   if (!player) return { error: 'Player not found' };
@@ -36,18 +48,25 @@ export async function explore() {
   if (roll >= 0.85) eventType = 'combat';
   else if (roll >= 0.45) eventType = 'loot';
 
+  const storyBeats = crossedStoryBeats(
+    player.distanceTraveled,
+    player.distanceTraveled + DISTANCE_GAIN
+  );
+
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. Deduct fuel and add distance
-      await tx.player.update({
-        where: { id: player.id },
-        data: { distanceTraveled: player.distanceTraveled + DISTANCE_GAIN },
+      // 1. Deduct fuel and add distance, guarded against stale reads / double-submit
+      const playerUpdated = await tx.player.updateMany({
+        where: { id: player.id, isAlive: true, health: { gt: 0 } },
+        data: { distanceTraveled: { increment: DISTANCE_GAIN } },
       });
+      if (playerUpdated.count === 0) throw new Error('You are dead');
 
-      await tx.vehicle.update({
-        where: { id: player.vehicle!.id },
-        data: { fuel: player.vehicle!.fuel - FUEL_COST },
+      const fuelUpdated = await tx.vehicle.updateMany({
+        where: { id: player.vehicle!.id, fuel: { gte: FUEL_COST } },
+        data: { fuel: { decrement: FUEL_COST } },
       });
+      if (fuelUpdated.count === 0) throw new Error('Not enough fuel to drive');
 
       // 2. Handle Encounter
       if (eventType === 'empty') {
@@ -73,7 +92,7 @@ export async function explore() {
         if (existingScrap) {
           await tx.playerInventory.update({
             where: { instanceId: existingScrap.instanceId },
-            data: { quantity: existingScrap.quantity + scavengedAmount },
+            data: { quantity: { increment: scavengedAmount } },
           });
         } else {
           await tx.playerInventory.create({
@@ -96,7 +115,12 @@ export async function explore() {
         });
       } else if (eventType === 'combat') {
         const enemyName = 'Highway Raider';
-        const hp = 35 + Math.floor(Math.random() * 15); // 35-50
+        const hp = scaleEnemyStat(
+          35 + Math.floor(Math.random() * 15),
+          player.level,
+          1.5
+        ); // base 35-50, +1.5/level
+        const attack = scaleEnemyStat(8, player.level, 0.3);
 
         await tx.activeEncounter.create({
           data: {
@@ -104,7 +128,7 @@ export async function explore() {
             enemyName,
             enemyHp: hp,
             enemyMaxHp: hp,
-            enemyAttack: 8,
+            enemyAttack: attack,
           },
         });
 
@@ -116,6 +140,18 @@ export async function explore() {
           },
         });
       }
+
+      for (const beat of storyBeats) {
+        await tx.eventLog.create({
+          data: {
+            playerId: player.id,
+            eventType: 'SYSTEM_NARRATIVE',
+            payload: { text: beat.text },
+          },
+        });
+      }
+
+      await maybePruneEventLog(tx, player.id);
     });
 
     if (eventType === 'loot' && scavengedAmount > 0) {
@@ -126,7 +162,9 @@ export async function explore() {
     return { success: true, eventType };
   } catch (error) {
     console.error('Explore failed:', error);
-    return { error: 'Exploration failed' };
+    return {
+      error: error instanceof Error ? error.message : 'Exploration failed',
+    };
   }
 }
 
@@ -136,7 +174,16 @@ export async function scavenge() {
 
   const player = await prisma.player.findUnique({
     where: { username: session.user.name },
-    include: { activeEncounter: true, inventory: true },
+    include: {
+      activeEncounter: true,
+      inventory: {
+        where: {
+          baseItemId: 'Scrap Metal',
+          rarity: 'COMMON',
+          isUpgraded: false,
+        },
+      },
+    },
   });
 
   if (!player) return { error: 'Player not found' };
@@ -158,11 +205,18 @@ export async function scavenge() {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. Deduct energy
-      await tx.player.update({
-        where: { id: player.id },
-        data: { energy: player.energy - SCAVENGE_ENERGY_COST },
+      // 1. Deduct energy, guarded against stale reads / double-submit
+      const energyUpdated = await tx.player.updateMany({
+        where: {
+          id: player.id,
+          isAlive: true,
+          health: { gt: 0 },
+          energy: { gte: SCAVENGE_ENERGY_COST },
+        },
+        data: { energy: { decrement: SCAVENGE_ENERGY_COST } },
       });
+      if (energyUpdated.count === 0)
+        throw new Error('Too exhausted to scavenge');
 
       // 2. Handle Outcome
       if (eventType === 'empty') {
@@ -187,7 +241,7 @@ export async function scavenge() {
         if (existingScrap) {
           await tx.playerInventory.update({
             where: { instanceId: existingScrap.instanceId },
-            data: { quantity: existingScrap.quantity + scavengedAmount },
+            data: { quantity: { increment: scavengedAmount } },
           });
         } else {
           await tx.playerInventory.create({
@@ -210,7 +264,12 @@ export async function scavenge() {
         });
       } else if (eventType === 'combat') {
         const enemyName = 'Feral Scavenger';
-        const hp = 25 + Math.floor(Math.random() * 10); // 25-35
+        const hp = scaleEnemyStat(
+          25 + Math.floor(Math.random() * 10),
+          player.level,
+          1
+        ); // base 25-35, +1/level
+        const attack = scaleEnemyStat(6, player.level, 0.2);
 
         await tx.activeEncounter.create({
           data: {
@@ -218,7 +277,7 @@ export async function scavenge() {
             enemyName,
             enemyHp: hp,
             enemyMaxHp: hp,
-            enemyAttack: 6,
+            enemyAttack: attack,
           },
         });
 
@@ -232,6 +291,8 @@ export async function scavenge() {
           },
         });
       }
+
+      await maybePruneEventLog(tx, player.id);
     });
 
     if (eventType === 'loot' && scavengedAmount > 0) {
@@ -242,6 +303,8 @@ export async function scavenge() {
     return { success: true, eventType };
   } catch (error) {
     console.error('Scavenge failed:', error);
-    return { error: 'Scavenging failed' };
+    return {
+      error: error instanceof Error ? error.message : 'Scavenging failed',
+    };
   }
 }

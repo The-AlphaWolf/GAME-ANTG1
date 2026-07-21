@@ -37,13 +37,14 @@ export async function grantStarterChest(
 ): Promise<RarityTier> {
   const chestRarity = rollChestRarity();
 
-  // Weapon of the chest's quality
+  // Weapon of the chest's quality, auto-equipped so it isn't dead weight
   await tx.playerInventory.create({
     data: {
       playerId,
       baseItemId: 'Improvised Weapon',
       rarity: chestRarity,
       quantity: 1,
+      equipSlot: 'WEAPON',
     },
   });
 

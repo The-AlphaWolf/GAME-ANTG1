@@ -11,10 +11,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PlayerInventory } from '@prisma/client';
-import { equipItem, dropItem } from '@/actions/inventory';
+import { equipItem, dropItem, consumeItem } from '@/actions/inventory';
 import { sellItem } from '@/actions/economy';
 import { getItemPrice } from '@/lib/game/economy';
-import { Loader2, Package, Sword, X, Coins, Sparkles } from 'lucide-react';
+import {
+  Loader2,
+  Package,
+  Sword,
+  X,
+  Coins,
+  Sparkles,
+  Heart,
+} from 'lucide-react';
 import { upgradeTalent } from '@/actions/talent';
 import { RARITY_COLORS } from '@/lib/game/rarity';
 
@@ -42,6 +50,12 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
   const handleSell = (instanceId: string) => {
     startTransition(async () => {
       await sellItem(instanceId);
+    });
+  };
+
+  const handleUse = (instanceId: string) => {
+    startTransition(async () => {
+      await consumeItem(instanceId);
     });
   };
 
@@ -133,6 +147,23 @@ export function InventorySheet({ inventory }: InventorySheetProps) {
                           <Loader2 className="h-3 w-3 animate-spin mr-1" />
                         ) : null}{' '}
                         Unequip
+                      </Button>
+                    )}
+
+                    {item.baseItemId === 'First Aid Kit' && !item.equipSlot && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={isPending}
+                        onClick={() => handleUse(item.instanceId)}
+                        className="h-7 text-xs bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-300 border border-emerald-500/30"
+                      >
+                        {isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Heart className="h-3 w-3 mr-1" />
+                        )}
+                        Use
                       </Button>
                     )}
 
