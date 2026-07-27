@@ -4,132 +4,108 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { getItemPrice, getShopBuyPrice, getShopItem } from '@/lib/game/economy';
+import { chapterForMiles } from '@/lib/game/story';
+import { grantItems, logNarrative } from '@/lib/game/engine';
 
-export async function sellItem(instanceId: string) {
+export async function sellItem(instanceId: string, quantity: number = 1) {
   const session = await auth();
   if (!session?.user?.name) return { error: 'Unauthorized' };
 
   const player = await prisma.player.findUnique({
     where: { username: session.user.name },
-    include: { inventory: true },
   });
-
   if (!player) return { error: 'Player not found' };
 
-  const itemToSell = player.inventory.find((i) => i.instanceId === instanceId);
-  if (!itemToSell) return { error: 'Item not found in inventory' };
+  const item = await prisma.playerInventory.findUnique({
+    where: { instanceId },
+  });
+  if (!item || item.playerId !== player.id)
+    return { error: 'Item not found in inventory' };
+  if (item.equipSlot) return { error: 'Cannot sell equipped items' };
 
-  if (itemToSell.equipSlot) return { error: 'Cannot sell equipped items' };
-
-  const itemPrice = getItemPrice(itemToSell.baseItemId, itemToSell.rarity);
+  const amount = Math.max(1, Math.min(Math.floor(quantity), item.quantity));
+  const unitPrice = getItemPrice(item.baseItemId, item.rarity);
+  const total = unitPrice * amount;
 
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. Deduct item
-      if (itemToSell.quantity === 1) {
-        await tx.playerInventory.delete({
-          where: { instanceId: itemToSell.instanceId },
-        });
-      } else {
-        await tx.playerInventory.update({
-          where: { instanceId: itemToSell.instanceId },
-          data: { quantity: itemToSell.quantity - 1 },
-        });
-      }
+      const sold = await tx.playerInventory.updateMany({
+        where: { instanceId, quantity: { gte: amount } },
+        data: { quantity: { decrement: amount } },
+      });
+      if (sold.count === 0) throw new Error('Not enough of that item');
 
-      // 2. Add credits
+      await tx.playerInventory.deleteMany({
+        where: { instanceId, quantity: { lte: 0 } },
+      });
+
       await tx.player.update({
         where: { id: player.id },
-        data: { credits: player.credits + itemPrice },
+        data: { credits: { increment: total } },
       });
 
-      // 3. Log event
-      await tx.eventLog.create({
-        data: {
-          playerId: player.id,
-          eventType: 'SYSTEM_NARRATIVE',
-          payload: {
-            text: `Sold 1x ${itemToSell.baseItemId} for ${itemPrice} EC.`,
-          },
-        },
-      });
+      await logNarrative(
+        tx,
+        player.id,
+        `Boone takes ${amount}x ${item.rarity !== 'COMMON' ? `${item.rarity} ` : ''}${item.baseItemId} off your hands for ${total} EC.`
+      );
     });
 
     revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Selling failed:', error);
-    return { error: 'Transaction failed' };
+    return {
+      error: error instanceof Error ? error.message : 'Transaction failed',
+    };
   }
 }
 
-export async function buyItem(baseItemId: string) {
+export async function buyItem(baseItemId: string, quantity: number = 1) {
   const session = await auth();
   if (!session?.user?.name) return { error: 'Unauthorized' };
 
   const player = await prisma.player.findUnique({
     where: { username: session.user.name },
-    include: { inventory: true },
   });
-
   if (!player) return { error: 'Player not found' };
   if (!player.isAlive || player.health <= 0) return { error: 'You are dead' };
 
-  // Only items listed in the shop catalog can be bought
   const shopItem = getShopItem(baseItemId);
   if (!shopItem) return { error: 'Item not sold here' };
 
-  const price = getShopBuyPrice(baseItemId);
-  if (player.credits < price) return { error: 'Not enough EC' };
+  const chapter = chapterForMiles(player.distanceTraveled).number;
+  if ((shopItem.fromChapter ?? 1) > chapter) {
+    return { error: 'Boone does not stock that this far west.' };
+  }
+
+  const amount = Math.max(1, Math.min(Math.floor(quantity), 99));
+  const total = getShopBuyPrice(baseItemId) * amount;
+  if (player.credits < total) return { error: 'Not enough EC' };
 
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. Deduct credits
-      await tx.player.update({
-        where: { id: player.id },
-        data: { credits: player.credits - price },
+      const paid = await tx.player.updateMany({
+        where: { id: player.id, credits: { gte: total } },
+        data: { credits: { decrement: total } },
       });
+      if (paid.count === 0) throw new Error('Not enough EC');
 
-      // 2. Add item to inventory (stack with existing common, non-upgraded items)
-      const existingStack = player.inventory.find(
-        (i) =>
-          i.baseItemId === baseItemId &&
-          i.rarity === 'COMMON' &&
-          !i.isUpgraded &&
-          !i.equipSlot
+      await grantItems(tx, player.id, [{ baseItemId, quantity: amount }]);
+
+      await logNarrative(
+        tx,
+        player.id,
+        `You buy ${amount}x ${baseItemId} for ${total} EC.`
       );
-
-      if (existingStack) {
-        await tx.playerInventory.update({
-          where: { instanceId: existingStack.instanceId },
-          data: { quantity: existingStack.quantity + 1 },
-        });
-      } else {
-        await tx.playerInventory.create({
-          data: {
-            playerId: player.id,
-            baseItemId,
-            quantity: 1,
-          },
-        });
-      }
-
-      // 3. Log event
-      await tx.eventLog.create({
-        data: {
-          playerId: player.id,
-          eventType: 'SYSTEM_NARRATIVE',
-          payload: {
-            text: `Bought 1x ${baseItemId} for ${price} EC.`,
-          },
-        },
-      });
     });
 
     revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Buying failed:', error);
-    return { error: 'Transaction failed' };
+    return {
+      error: error instanceof Error ? error.message : 'Transaction failed',
+    };
   }
 }

@@ -1,23 +1,19 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { sendMessage, systemBroadcast } from '@/actions/chat';
+import { npcReplyTo } from '@/actions/npc';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
+import { type PrismaMock } from '../helpers/prisma-mock';
 
-vi.mock('@/auth', () => ({
-  auth: vi.fn(),
-}));
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/actions/npc', () => ({ npcReplyTo: vi.fn() }));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    chatMessage: {
-      create: vi.fn(),
-    },
-  },
-}));
-
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
+const db = prisma as unknown as PrismaMock;
 
 describe('Chat Actions', () => {
   beforeEach(() => {
@@ -27,50 +23,58 @@ describe('Chat Actions', () => {
   describe('sendMessage', () => {
     it('fails if not logged in', async () => {
       (auth as Mock).mockResolvedValue(null);
-      const res = await sendMessage('Hello World');
-      expect(res.error).toBe('Unauthorized');
+      expect((await sendMessage('Hello')).error).toBe('Unauthorized');
     });
 
-    it('fails if message is empty', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      const res = await sendMessage('   ');
-      expect(res.error).toBe('Message cannot be empty');
+    it('fails if the message is empty', async () => {
+      (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
+      expect((await sendMessage('   ')).error).toBe('Message cannot be empty');
     });
 
-    it('fails if message is too long', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      const longMessage = 'a'.repeat(201);
-      const res = await sendMessage(longMessage);
-      expect(res.error).toBe('Message is too long');
+    it('fails if the message is too long', async () => {
+      (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
+      expect((await sendMessage('a'.repeat(201))).error).toBe(
+        'Message is too long'
+      );
     });
 
-    it('creates message and revalidates path on success', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      const res = await sendMessage('Hello World', 'WORLD');
+    it('stores the message and gives an NPC a chance to answer', async () => {
+      (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
+      db.player.findUnique.mockResolvedValue({
+        username: 'Tester',
+        distanceTraveled: 0,
+      });
 
-      expect(prisma.chatMessage.create).toHaveBeenCalledWith({
+      const result = await sendMessage('Anyone seen Boone?', 'WORLD');
+
+      expect(db.chatMessage.create).toHaveBeenCalledWith({
         data: {
           channel: 'WORLD',
-          sender: 'testuser',
-          message: 'Hello World',
+          sender: 'Tester',
+          message: 'Anyone seen Boone?',
         },
       });
-      expect(res.success).toBe(true);
+      expect(npcReplyTo).toHaveBeenCalledWith(
+        'Anyone seen Boone?',
+        'Tester',
+        1
+      );
+      expect(result.success).toBe(true);
     });
   });
 
   describe('systemBroadcast', () => {
-    it('creates system message without needing auth', async () => {
-      const res = await systemBroadcast('Server is rebooting', 'SYSTEM');
+    it('creates a system message without auth', async () => {
+      const result = await systemBroadcast('Server is rebooting', 'SYSTEM');
 
-      expect(prisma.chatMessage.create).toHaveBeenCalledWith({
+      expect(db.chatMessage.create).toHaveBeenCalledWith({
         data: {
           channel: 'SYSTEM',
           sender: 'System',
           message: 'Server is rebooting',
         },
       });
-      expect(res.success).toBe(true);
+      expect(result.success).toBe(true);
     });
   });
 });

@@ -1,181 +1,181 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { Player, ActiveQuest } from '@prisma/client';
-import { QUEST_REGISTRY } from '@/lib/game/quests';
+import { QUEST_REGISTRY, questsForChapter } from '@/lib/game/quests';
 import { acceptQuest, turnInQuest } from '@/actions/quests';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Sheet, SheetTrigger } from '@/components/ui/sheet';
+import { chapterForMiles } from '@/lib/game/story';
+import { SheetShell, SheetSection, TinyButton, Empty } from './sheet-shell';
 
 interface QuestLogSheetProps {
-  player: Player & {
-    quests: ActiveQuest[];
-  };
+  player: Player & { quests: ActiveQuest[] };
   children: React.ReactNode;
 }
 
 export function QuestLogSheet({ player, children }: QuestLogSheetProps) {
   const [isPending, startTransition] = useTransition();
-  const handleAcceptQuest = (questId: string) => {
+  const [error, setError] = useState<string | null>(null);
+
+  const run = (fn: () => Promise<{ error?: string }>) => {
+    setError(null);
     startTransition(async () => {
-      const result = await acceptQuest(questId);
-      if (result.error) {
-        console.error(result.error);
-      }
+      const result = await fn();
+      if (result.error) setError(result.error);
     });
   };
 
-  const handleTurnInQuest = (questId: string) => {
-    startTransition(async () => {
-      const result = await turnInQuest(questId);
-      if (result.error) {
-        console.error(result.error);
-      }
-    });
-  };
-
-  const availableQuests = Object.keys(QUEST_REGISTRY).filter((questId) => {
-    const q = player.quests.find((active) => active.questId === questId);
-    return !q; // Show if neither active nor completed (since completed also stays in DB with status COMPLETED)
-  });
-
-  const activeQuests = player.quests.filter((q) => q.status === 'ACTIVE');
+  const chapter = chapterForMiles(player.distanceTraveled).number;
+  const active = player.quests.filter((q) => q.status === 'ACTIVE');
+  const completed = player.quests.filter((q) => q.status === 'COMPLETED');
+  const available = questsForChapter(chapter).filter(
+    (def) => !player.quests.some((q) => q.questId === def.id)
+  );
 
   return (
     <Sheet>
-      <SheetTrigger>{children}</SheetTrigger>
-      <SheetContent
-        side="right"
-        className="w-[400px] sm:w-[540px] bg-zinc-950 border-zinc-800 p-6 overflow-y-auto"
+      <SheetTrigger render={children as React.ReactElement} />
+      <SheetShell
+        title="Bounty Board"
+        subtitle="Contracts posted by the people you meet on the road. Kill, gather, or cover ground — then come back and settle up."
       >
-        <h2 className="text-xl font-bold tracking-tight text-white mb-6">
-          Bounty Board & Quest Log
-        </h2>
+        {error && (
+          <p
+            className="mb-3 text-[10px] p-2 border rule"
+            style={{
+              color: 'var(--stat-health)',
+              borderRadius: 'var(--radius)',
+            }}
+          >
+            {error}
+          </p>
+        )}
 
-        <ScrollArea className="h-[calc(100vh-100px)] pr-4">
-          <div className="space-y-6">
-            {/* Active Quests */}
-            <div>
-              <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3">
-                Active Quests
-              </h3>
-              {activeQuests.length === 0 ? (
-                <p className="text-zinc-600 text-sm">No active quests.</p>
-              ) : (
-                <div className="space-y-4">
-                  {activeQuests.map((quest) => {
-                    const def = QUEST_REGISTRY[quest.questId];
-                    if (!def) return null;
-                    const isReadyToTurnIn =
-                      quest.progress >= def.targetQuantity;
+        <SheetSection label={`Active (${active.length})`}>
+          {active.length === 0 ? (
+            <Empty>No bounties in hand.</Empty>
+          ) : (
+            active.map((quest) => {
+              const def = QUEST_REGISTRY[quest.questId];
+              if (!def) return null;
+              const ready = quest.progress >= def.targetQuantity;
+              const pct = Math.min(
+                100,
+                (quest.progress / def.targetQuantity) * 100
+              );
 
-                    return (
-                      <div
-                        key={quest.id}
-                        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-bold text-white">{def.title}</h4>
-                          <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-                            {def.type}
-                          </span>
-                        </div>
-                        <p className="text-sm text-zinc-400 mb-3">
-                          {def.description}
-                        </p>
+              return (
+                <div
+                  key={quest.id}
+                  className="p-2.5 border rule space-y-2"
+                  style={{ borderRadius: 'var(--radius)' }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="text-[12px] font-bold">{def.title}</h4>
+                      <p className="micro mt-1">
+                        {def.giver} · {def.type}
+                      </p>
+                    </div>
+                    <span
+                      className="text-[10px] tabular-nums shrink-0"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {quest.progress}/{def.targetQuantity}
+                    </span>
+                  </div>
 
-                        <div className="mb-3">
-                          <div className="flex justify-between text-xs text-zinc-500 mb-1">
-                            <span>Progress: {def.targetId}</span>
-                            <span>
-                              {quest.progress} / {def.targetQuantity}
-                            </span>
-                          </div>
-                          <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-emerald-500 transition-all"
-                              style={{
-                                width: `${Math.min(100, (quest.progress / def.targetQuantity) * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
+                  <p
+                    className="text-[10px] leading-relaxed"
+                    style={{ color: 'var(--text-dim)' }}
+                  >
+                    {def.description}
+                  </p>
 
-                        {isReadyToTurnIn && (
-                          <Button
-                            onClick={() => handleTurnInQuest(quest.questId)}
-                            disabled={isPending}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-8 text-xs"
-                          >
-                            Turn In Quest
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
+                  <div
+                    className="meter"
+                    style={{
+                      ['--meter-color' as string]: ready
+                        ? 'var(--accent)'
+                        : 'var(--stat-sanity)',
+                    }}
+                  >
+                    <span style={{ width: `${pct}%` }} />
+                  </div>
+
+                  {ready && (
+                    <TinyButton
+                      tone="accent"
+                      disabled={isPending}
+                      onClick={() => run(() => turnInQuest(quest.questId))}
+                    >
+                      Turn in
+                    </TinyButton>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })
+          )}
+        </SheetSection>
 
-            {/* Available Quests */}
-            <div>
-              <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3 mt-6">
-                Bounty Board
-              </h3>
-              {availableQuests.length === 0 ? (
-                <p className="text-zinc-600 text-sm">
-                  No new bounties available.
+        <SheetSection label={`Posted (${available.length})`}>
+          {available.length === 0 ? (
+            <Empty>Nothing new posted. Drive further east.</Empty>
+          ) : (
+            available.map((def) => (
+              <div
+                key={def.id}
+                className="p-2.5 border rule space-y-2"
+                style={{ borderRadius: 'var(--radius)' }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-[12px] font-bold">{def.title}</h4>
+                  <span className="micro shrink-0">{def.giver}</span>
+                </div>
+                <p
+                  className="text-[10px] leading-relaxed"
+                  style={{ color: 'var(--text-dim)' }}
+                >
+                  {def.description}
                 </p>
-              ) : (
-                <div className="space-y-4">
-                  {availableQuests.map((questId) => {
-                    const def = QUEST_REGISTRY[questId];
-                    return (
-                      <div
-                        key={questId}
-                        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-bold text-white">{def.title}</h4>
-                          <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-                            {def.type}
-                          </span>
-                        </div>
-                        <p className="text-sm text-zinc-400 mb-3">
-                          {def.description}
-                        </p>
-                        <div className="text-xs text-zinc-500 mb-4">
-                          <p>Rewards:</p>
-                          <ul className="list-disc list-inside">
-                            {def.rewards.credits && (
-                              <li>{def.rewards.credits} Energy Credits</li>
-                            )}
-                            {def.rewards.xp && <li>{def.rewards.xp} XP</li>}
-                            {def.rewards.items?.map((item) => (
-                              <li key={item.itemId}>
-                                {item.quantity}x {item.itemId}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <Button
-                          onClick={() => handleAcceptQuest(questId)}
-                          disabled={isPending}
-                          variant="outline"
-                          className="w-full bg-zinc-950 border-zinc-700 hover:bg-zinc-800 text-white h-8 text-xs"
-                        >
-                          Accept Bounty
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </ScrollArea>
-      </SheetContent>
+                <p className="text-[10px]" style={{ color: 'var(--accent)' }}>
+                  {[
+                    def.rewards.credits && `${def.rewards.credits} EC`,
+                    def.rewards.xp && `${def.rewards.xp} XP`,
+                    def.rewards.reputation &&
+                      `+${def.rewards.reputation} standing`,
+                    ...(def.rewards.items ?? []).map(
+                      (i) => `${i.quantity}× ${i.itemId}`
+                    ),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <TinyButton
+                  disabled={isPending}
+                  onClick={() => run(() => acceptQuest(def.id))}
+                >
+                  Accept
+                </TinyButton>
+              </div>
+            ))
+          )}
+        </SheetSection>
+
+        {completed.length > 0 && (
+          <SheetSection label={`Settled (${completed.length})`}>
+            {completed.map((quest) => (
+              <p
+                key={quest.id}
+                className="text-[10px]"
+                style={{ color: 'var(--text-dim)' }}
+              >
+                ✓ {QUEST_REGISTRY[quest.questId]?.title ?? quest.questId}
+              </p>
+            ))}
+          </SheetSection>
+        )}
+      </SheetShell>
     </Sheet>
   );
 }

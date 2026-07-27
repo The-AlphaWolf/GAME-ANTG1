@@ -1,5 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../src/lib/logger';
+import { createStarterVehicle } from '../src/lib/game/vehicle';
+import { grantStarterChest } from '../src/lib/game/starter-chest';
+import { CHAPTERS } from '../src/lib/game/story';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -19,76 +22,37 @@ async function main() {
     },
   });
 
-  const player = await prisma.player.upsert({
+  const existing = await prisma.player.findUnique({
     where: { username: 'AlphaWolf' },
-    update: {},
-    create: {
-      userId: user.id,
-      username: 'AlphaWolf',
-      level: 1,
-      xp: 0,
-      sanity: 100,
-      fatigue: 0,
-      thirst: 0,
-      vehicle: {
-        create: {
-          type: 'Common Van',
-          level: 1,
-          armor: 10,
-          fuel: 100,
-          components: {
-            create: [
-              {
-                type: 'ENGINE',
-                name: 'Rusted V8 Engine',
-                durability: 80,
-                maxDurability: 100,
-              },
-              {
-                type: 'CHASSIS',
-                name: 'Van Chassis',
-                durability: 100,
-                maxDurability: 100,
-              },
-              {
-                type: 'TIRES',
-                name: 'Worn All-Terrains',
-                durability: 45,
-                maxDurability: 100,
-              },
-              {
-                type: 'ARMOR',
-                name: 'Scrap Metal Plating',
-                durability: 60,
-                maxDurability: 100,
-              },
-              {
-                type: 'STORAGE',
-                name: 'Trunk Space',
-                durability: 100,
-                maxDurability: 100,
-              },
-              {
-                type: 'FUEL_SYSTEM',
-                name: 'Leaky Gas Tank',
-                durability: 90,
-                maxDurability: 100,
-              },
-            ],
-          },
-        },
-      },
-    },
   });
 
-  logger.info({ player }, 'Seeded player');
+  if (existing) {
+    logger.info('Seed player already exists, skipping.');
+    return;
+  }
 
-  await prisma.eventLog.create({
-    data: {
-      playerId: player.id,
-      eventType: 'PLAYER_CREATED',
-      payload: { username: player.username },
-    },
+  // Mirrors registerAction so a seeded player starts in exactly the same state
+  // a real one does: full vehicle, starter chest, opening story beat.
+  await prisma.$transaction(async (tx) => {
+    const player = await tx.player.create({
+      data: { userId: user.id, username: 'AlphaWolf' },
+    });
+
+    await createStarterVehicle(tx, player.id);
+
+    await tx.eventLog.create({
+      data: {
+        playerId: player.id,
+        eventType: 'STORY_BEAT',
+        payload: {
+          text: `CHAPTER 1 — ${CHAPTERS[0].title.toUpperCase()}. ${CHAPTERS[0].opening}`,
+        },
+      },
+    });
+
+    await grantStarterChest(tx, player.id);
+
+    logger.info({ playerId: player.id }, 'Seeded player');
   });
 
   logger.info('Seeding finished.');

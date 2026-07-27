@@ -4,6 +4,10 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { RECIPES } from '@/lib/game/crafting-recipes';
+import { chapterForMiles } from '@/lib/game/story';
+import { awardXp, grantItems, logNarrative } from '@/lib/game/engine';
+
+const CRAFT_XP = 12;
 
 export async function craftItem(recipeId: string) {
   const session = await auth();
@@ -16,75 +20,71 @@ export async function craftItem(recipeId: string) {
     where: { username: session.user.name },
     include: { inventory: true },
   });
-
   if (!player) return { error: 'Player not found' };
 
-  // Verify materials
+  const chapter = chapterForMiles(player.distanceTraveled).number;
+  if ((recipe.chapter ?? 1) > chapter) {
+    return { error: 'You have not learned that yet.' };
+  }
+
+  // Ingredients can be spread across several stacks of the same base item
+  // (different rarities), so totals are counted rather than a single row.
+  const stacksFor = (baseItemId: string) =>
+    player.inventory.filter((i) => i.baseItemId === baseItemId && !i.equipSlot);
+
   for (const req of recipe.ingredients) {
-    const item = player.inventory.find((i) => i.baseItemId === req.baseItemId);
-    if (!item || item.quantity < req.quantity) {
-      return { error: `Missing required materials: ${req.baseItemId}` };
+    const held = stacksFor(req.baseItemId).reduce(
+      (sum, i) => sum + i.quantity,
+      0
+    );
+    if (held < req.quantity) {
+      return { error: `Missing materials: ${req.quantity}x ${req.baseItemId}` };
     }
   }
 
   try {
     await prisma.$transaction(async (tx) => {
-      // 1. Deduct materials
       for (const req of recipe.ingredients) {
-        const item = player.inventory.find(
-          (i) => i.baseItemId === req.baseItemId
-        )!;
-        if (item.quantity === req.quantity) {
-          // Delete row if exactly matches
-          await tx.playerInventory.delete({
-            where: { instanceId: item.instanceId },
+        let remaining = req.quantity;
+        for (const stack of stacksFor(req.baseItemId)) {
+          if (remaining <= 0) break;
+          const take = Math.min(remaining, stack.quantity);
+          const taken = await tx.playerInventory.updateMany({
+            where: { instanceId: stack.instanceId, quantity: { gte: take } },
+            data: { quantity: { decrement: take } },
           });
-        } else {
-          // Decrement
-          await tx.playerInventory.update({
-            where: { instanceId: item.instanceId },
-            data: { quantity: item.quantity - req.quantity },
-          });
+          if (taken.count === 0) continue;
+          remaining -= take;
         }
+        if (remaining > 0)
+          throw new Error(`Missing materials: ${req.baseItemId}`);
       }
 
-      // 2. Add crafted item
-      const existingOutput = player.inventory.find(
-        (i) =>
-          i.baseItemId === recipe.outputItemId &&
-          i.rarity === 'COMMON' &&
-          !i.isUpgraded
+      await tx.playerInventory.deleteMany({
+        where: { playerId: player.id, quantity: { lte: 0 } },
+      });
+
+      await grantItems(tx, player.id, [
+        { baseItemId: recipe.outputItemId, quantity: recipe.outputQuantity },
+      ]);
+
+      await logNarrative(
+        tx,
+        player.id,
+        `You work at the tailgate bench and put together ${recipe.outputQuantity}x ${recipe.outputItemId}.`
       );
 
-      if (existingOutput) {
-        await tx.playerInventory.update({
-          where: { instanceId: existingOutput.instanceId },
-          data: { quantity: existingOutput.quantity + recipe.outputQuantity },
-        });
-      } else {
-        await tx.playerInventory.create({
-          data: {
-            playerId: player.id,
-            baseItemId: recipe.outputItemId,
-            quantity: recipe.outputQuantity,
-          },
-        });
-      }
-
-      // 3. Log event
-      await tx.eventLog.create({
-        data: {
-          playerId: player.id,
-          eventType: 'SYSTEM_NARRATIVE',
-          payload: { text: `You successfully crafted: ${recipe.name}.` },
-        },
-      });
+      const xp = await awardXp(tx, player, CRAFT_XP);
+      if (xp.narrative)
+        await logNarrative(tx, player.id, xp.narrative, 'LEVEL_UP');
     });
 
     revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Crafting failed:', error);
-    return { error: 'Crafting failed' };
+    return {
+      error: error instanceof Error ? error.message : 'Crafting failed',
+    };
   }
 }

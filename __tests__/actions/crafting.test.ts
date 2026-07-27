@@ -2,134 +2,123 @@ import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { craftItem } from '@/actions/crafting';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
+import { makePlayer, makeItem, type PrismaMock } from '../helpers/prisma-mock';
 
-vi.mock('@/auth', () => ({
-  auth: vi.fn(),
-}));
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    player: {
-      findUnique: vi.fn(),
-    },
-    playerInventory: {
-      delete: vi.fn(),
-      update: vi.fn(),
-      create: vi.fn(),
-    },
-    eventLog: {
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
-
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
+const db = prisma as unknown as PrismaMock;
 
 describe('Crafting Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.playerInventory.updateMany.mockResolvedValue({ count: 1 });
+    (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
   });
 
   it('fails if not logged in', async () => {
     (auth as Mock).mockResolvedValue(null);
-    const res = await craftItem('recipe_scrap_armor');
-    expect(res.error).toBe('Unauthorized');
+    expect((await craftItem('recipe_scrap_armor')).error).toBe('Unauthorized');
   });
 
-  it('fails if recipe not found', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    const res = await craftItem('invalid_recipe');
-    expect(res.error).toBe('Recipe not found');
+  it('fails on an unknown recipe', async () => {
+    expect((await craftItem('recipe_nonsense')).error).toBe('Recipe not found');
   });
 
-  it('fails if missing materials', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      inventory: [
-        { instanceId: 'i1', baseItemId: 'Scrap Metal', quantity: 5 }, // Needs 10 for scrap armor
-      ],
-    });
+  it('fails when materials are short', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        inventory: [makeItem({ baseItemId: 'Scrap Metal', quantity: 1 })],
+      })
+    );
 
-    const res = await craftItem('recipe_scrap_armor');
-    expect(res.error).toContain('Missing required materials');
+    const result = await craftItem('recipe_scrap_armor');
+    expect(result.error).toMatch(/Missing materials/);
   });
 
-  it('crafts successfully, deletes exact material, creates new item', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      inventory: [
-        { instanceId: 'i1', baseItemId: 'Scrap Metal', quantity: 10 },
-      ],
-    });
+  it('refuses recipes locked behind a later chapter', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        distanceTraveled: 0,
+        inventory: [
+          makeItem({ instanceId: 'a', baseItemId: 'Gun Parts', quantity: 99 }),
+          makeItem({
+            instanceId: 'b',
+            baseItemId: 'Scrap Metal',
+            quantity: 99,
+          }),
+          makeItem({
+            instanceId: 'c',
+            baseItemId: 'Electronics',
+            quantity: 99,
+          }),
+        ],
+      })
+    );
 
-    (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-      await cb(prisma);
-    });
-
-    const res = await craftItem('recipe_scrap_armor');
-    expect(res.success).toBe(true);
-
-    // Check material deletion since it was exactly 10
-    expect(prisma.playerInventory.delete).toHaveBeenCalledWith({
-      where: { instanceId: 'i1' },
-    });
-
-    // Check output creation
-    expect(prisma.playerInventory.create).toHaveBeenCalledWith({
-      data: {
-        playerId: 'p1',
-        baseItemId: 'Scrap Armor',
-        quantity: 1,
-      },
-    });
-
-    expect(prisma.eventLog.create).toHaveBeenCalled();
+    expect((await craftItem('recipe_scrap_pistol')).error).toBe(
+      'You have not learned that yet.'
+    );
   });
 
-  it('crafts successfully, decrements material, updates existing output item', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      inventory: [
-        {
-          instanceId: 'i1',
-          baseItemId: 'Scrap Metal',
-          quantity: 15,
-          rarity: 'COMMON',
-          isUpgraded: false,
-        },
-        {
-          instanceId: 'i2',
-          baseItemId: 'Scrap Armor',
-          quantity: 1,
-          rarity: 'COMMON',
-          isUpgraded: false,
-        },
-      ],
+  it('consumes materials and produces the output', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        inventory: [
+          makeItem({
+            instanceId: 'a',
+            baseItemId: 'Scrap Metal',
+            quantity: 20,
+          }),
+          makeItem({ instanceId: 'b', baseItemId: 'Cloth', quantity: 10 }),
+        ],
+      })
+    );
+
+    const result = await craftItem('recipe_scrap_armor');
+
+    expect(result.success).toBe(true);
+    expect(db.playerInventory.updateMany).toHaveBeenCalledWith({
+      where: { instanceId: 'a', quantity: { gte: 8 } },
+      data: { quantity: { decrement: 8 } },
     });
+    expect(db.playerInventory.create).toHaveBeenCalled();
+  });
 
-    (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-      await cb(prisma);
+  it('draws a material from several stacks of differing rarity', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        inventory: [
+          makeItem({ instanceId: 'a', baseItemId: 'Scrap Metal', quantity: 5 }),
+          makeItem({
+            instanceId: 'b',
+            baseItemId: 'Scrap Metal',
+            rarity: 'GOLD',
+            quantity: 5,
+          }),
+          makeItem({ instanceId: 'c', baseItemId: 'Cloth', quantity: 10 }),
+        ],
+      })
+    );
+
+    const result = await craftItem('recipe_scrap_armor');
+
+    expect(result.success).toBe(true);
+    // 8 Scrap Metal needed: 5 from the first stack, 3 from the second.
+    expect(db.playerInventory.updateMany).toHaveBeenCalledWith({
+      where: { instanceId: 'a', quantity: { gte: 5 } },
+      data: { quantity: { decrement: 5 } },
     });
-
-    const res = await craftItem('recipe_scrap_armor');
-    expect(res.success).toBe(true);
-
-    // Check material decrement (15 - 10 = 5)
-    expect(prisma.playerInventory.update).toHaveBeenCalledWith({
-      where: { instanceId: 'i1' },
-      data: { quantity: 5 },
-    });
-
-    // Check output update (1 + 1 = 2)
-    expect(prisma.playerInventory.update).toHaveBeenCalledWith({
-      where: { instanceId: 'i2' },
-      data: { quantity: 2 },
+    expect(db.playerInventory.updateMany).toHaveBeenCalledWith({
+      where: { instanceId: 'b', quantity: { gte: 3 } },
+      data: { quantity: { decrement: 3 } },
     });
   });
 });

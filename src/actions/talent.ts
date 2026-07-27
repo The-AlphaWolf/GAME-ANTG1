@@ -3,29 +3,27 @@
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
-import { getNextRarity } from '@/lib/game/rarity';
+import {
+  DAILY_CHARGES,
+  chargeCostFor,
+  creditCostFor,
+  isMaxRarity,
+  rollUpgrade,
+} from '@/lib/game/talent';
+import { logNarrative } from '@/lib/game/engine';
 
+/** Rolls the daily charge allowance over once UTC midnight has passed. */
 export async function checkAndResetCharges(playerId: string) {
-  const player = await prisma.player.findUnique({
-    where: { id: playerId },
-  });
-
+  const player = await prisma.player.findUnique({ where: { id: playerId } });
   if (!player) return;
 
-  const now = new Date();
-  const lastReset = player.lastUpgradeReset;
+  const nextMidnight = new Date(player.lastUpgradeReset);
+  nextMidnight.setUTCHours(24, 0, 0, 0);
 
-  // Check if we've passed midnight since last reset
-  const nextMidnight = new Date(lastReset);
-  nextMidnight.setUTCHours(24, 0, 0, 0); // Next midnight in UTC
-
-  if (now >= nextMidnight) {
+  if (new Date() >= nextMidnight) {
     await prisma.player.update({
       where: { id: playerId },
-      data: {
-        upgradeCharges: 6,
-        lastUpgradeReset: now,
-      },
+      data: { upgradeCharges: DAILY_CHARGES, lastUpgradeReset: new Date() },
     });
   }
 }
@@ -37,33 +35,24 @@ export async function upgradeTalent(
   const session = await auth();
   if (!session?.user?.name) return { error: 'Unauthorized' };
 
-  const player = await prisma.player.findUnique({
+  const found = await prisma.player.findUnique({
     where: { username: session.user.name },
   });
+  if (!found) return { error: 'Player not found' };
 
+  await checkAndResetCharges(found.id);
+
+  const player = await prisma.player.findUnique({ where: { id: found.id } });
   if (!player) return { error: 'Player not found' };
-
-  // Run midnight check
-  await checkAndResetCharges(player.id);
-
-  // Re-fetch player to get updated charges if they reset
-  const updatedPlayer = await prisma.player.findUnique({
-    where: { id: player.id },
-  });
-
-  if (!updatedPlayer || updatedPlayer.upgradeCharges <= 0) {
-    return { error: 'No upgrade charges remaining for today.' };
-  }
 
   try {
     let resultMessage = '';
 
     await prisma.$transaction(async (tx) => {
+      // 1. Read target
       let currentRarity;
-      let isUpgraded;
-      let itemName = '';
+      let itemName: string;
 
-      // 1. Fetch Target
       if (targetType === 'inventory') {
         const item = await tx.playerInventory.findUnique({
           where: { instanceId: targetId },
@@ -71,89 +60,83 @@ export async function upgradeTalent(
         if (!item || item.playerId !== player.id)
           throw new Error('Item not found');
         currentRarity = item.rarity;
-        isUpgraded = item.isUpgraded;
         itemName = item.baseItemId;
       } else {
-        const comp = await tx.vehicleComponent.findUnique({
+        const component = await tx.vehicleComponent.findUnique({
           where: { id: targetId },
           include: { vehicle: true },
         });
-        if (!comp || comp.vehicle.playerId !== player.id)
+        if (!component || component.vehicle.playerId !== player.id)
           throw new Error('Component not found');
-        currentRarity = comp.rarity;
-        isUpgraded = comp.isUpgraded;
-        itemName = comp.name;
+        currentRarity = component.rarity;
+        itemName = component.name;
       }
 
-      if (isUpgraded) {
-        throw new Error('This item has already been upgraded by your talent.');
+      if (isMaxRarity(currentRarity)) {
+        throw new Error('Already at the maximum Mythical rarity.');
       }
 
-      if (currentRarity === 'MYTHICAL') {
-        throw new Error('Item is already at the maximum Mythical rarity.');
+      // 2. Pay costs
+      const charges = chargeCostFor(currentRarity);
+      const credits = creditCostFor(currentRarity);
+
+      if (player.upgradeCharges < charges) {
+        throw new Error(
+          `Need ${charges} charges to push a ${currentRarity} item; you have ${player.upgradeCharges}.`
+        );
+      }
+      if (player.credits < credits) {
+        throw new Error(
+          `Need ${credits} EC to stabilise a ${currentRarity} upgrade; you have ${player.credits}.`
+        );
       }
 
-      // 2. Perform Rolls
-      let finalRarity = getNextRarity(currentRarity)!; // Primary roll (100%)
-      let tiersGained = 1;
+      const paid = await tx.player.updateMany({
+        where: {
+          id: player.id,
+          upgradeCharges: { gte: charges },
+          credits: { gte: credits },
+        },
+        data: {
+          upgradeCharges: { decrement: charges },
+          credits: { decrement: credits },
+        },
+      });
+      if (paid.count === 0) throw new Error('Not enough charges or EC');
 
-      // Secondary Roll (30%)
-      if (finalRarity !== 'MYTHICAL' && Math.random() < 0.3) {
-        finalRarity = getNextRarity(finalRarity)!;
-        tiersGained++;
+      // 3. Roll
+      const roll = rollUpgrade(currentRarity);
+      resultMessage = roll.jackpot
+        ? `JACKPOT — your SSS Talent catches something far bigger than it should. ${itemName} is now MYTHICAL.`
+        : `${itemName} pushed ${roll.tiersGained} tier(s) to ${roll.finalRarity}. Cost: ${charges} charge(s), ${credits} EC.`;
 
-        // Tertiary Roll (5%)
-        if (finalRarity !== 'MYTHICAL' && Math.random() < 0.05) {
-          finalRarity = getNextRarity(finalRarity)!;
-          tiersGained++;
-        }
-      }
-
-      // Gacha Roll (0.05%) - Supercedes all previous if it hits
-      if (Math.random() < 0.0005) {
-        finalRarity = 'MYTHICAL';
-        resultMessage = `JACKPOT! Your SSS Talent resonated with the cosmos. ${itemName} instantly became MYTHICAL!`;
-      } else {
-        resultMessage = `Successfully upgraded ${itemName} by ${tiersGained} tier(s) to ${finalRarity}!`;
-      }
-
-      // 3. Update Target
+      // 4. Apply
       if (targetType === 'inventory') {
         await tx.playerInventory.update({
           where: { instanceId: targetId },
           data: {
-            rarity: finalRarity,
+            rarity: roll.finalRarity,
             isUpgraded: true,
+            upgradeCount: { increment: 1 },
           },
         });
       } else {
         await tx.vehicleComponent.update({
           where: { id: targetId },
           data: {
-            rarity: finalRarity,
+            rarity: roll.finalRarity,
             isUpgraded: true,
+            upgradeCount: { increment: 1 },
           },
         });
       }
 
-      // 4. Consume Charge and Log
-      await tx.player.update({
-        where: { id: player.id },
-        data: { upgradeCharges: { decrement: 1 } },
-      });
-
-      await tx.eventLog.create({
-        data: {
-          playerId: player.id,
-          eventType: 'TALENT_USED',
-          payload: { text: resultMessage },
-        },
-      });
+      await logNarrative(tx, player.id, resultMessage, 'TALENT_USED');
     });
 
     revalidatePath('/');
     return { success: true, message: resultMessage };
-  } catch (error: unknown) {
+  } catch (error) {
     const e = error as Error;
     return { error: e.message || 'Failed to upgrade item.' };
   }

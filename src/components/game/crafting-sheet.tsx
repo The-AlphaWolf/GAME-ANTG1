@@ -2,29 +2,38 @@
 
 import { useState, useTransition } from 'react';
 import { Player, PlayerInventory } from '@prisma/client';
-import { RECIPES } from '@/lib/game/crafting-recipes';
+import { recipesForChapter } from '@/lib/game/crafting-recipes';
 import { craftItem } from '@/actions/crafting';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Check, X, Hammer, Loader2 } from 'lucide-react';
-
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetTrigger } from '@/components/ui/sheet';
+import { chapterForMiles } from '@/lib/game/story';
+import { SheetShell, TinyButton, Empty } from './sheet-shell';
 
 interface CraftingSheetProps {
-  player: Player & {
-    inventory: PlayerInventory[];
-  };
+  player: Player & { inventory: PlayerInventory[] };
   children: React.ReactNode;
 }
 
 export function CraftingSheet({ player, children }: CraftingSheetProps) {
   const [isPending, startTransition] = useTransition();
   const [craftingId, setCraftingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const chapter = chapterForMiles(player.distanceTraveled).number;
+  const recipes = recipesForChapter(chapter);
+
+  // Materials can sit in several stacks of differing rarity, so totals are
+  // summed rather than read off one row.
+  const held = (baseItemId: string) =>
+    player.inventory
+      .filter((i) => i.baseItemId === baseItemId && !i.equipSlot)
+      .reduce((sum, i) => sum + i.quantity, 0);
 
   const handleCraft = (recipeId: string) => {
     setCraftingId(recipeId);
+    setError(null);
     startTransition(async () => {
-      await craftItem(recipeId);
+      const result = await craftItem(recipeId);
+      if (result.error) setError(result.error);
       setCraftingId(null);
     });
   };
@@ -32,115 +41,88 @@ export function CraftingSheet({ player, children }: CraftingSheetProps) {
   return (
     <Sheet>
       <SheetTrigger render={children as React.ReactElement} />
-      <SheetContent
-        side="right"
-        className="w-[300px] sm:w-[400px] bg-zinc-950 border-zinc-800 text-zinc-100 p-0"
+      <SheetShell
+        title="Crafting Bench"
+        subtitle="Tailgate workshop. Turn salvage into food, fuel, medicine and weapons. More recipes unlock as you drive east."
       >
-        <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-mono">
-          <div className="p-4 border-b border-zinc-800 shrink-0">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <Hammer className="h-5 w-5 text-zinc-400" />
-              Crafting Bench
-            </h2>
-            <p className="text-xs text-zinc-500 mt-1">
-              Convert raw materials into useful gear.
-            </p>
-          </div>
+        {error && (
+          <p
+            className="mb-3 text-[10px] p-2 border rule"
+            style={{
+              color: 'var(--stat-health)',
+              borderRadius: 'var(--radius)',
+            }}
+          >
+            {error}
+          </p>
+        )}
 
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
-              {RECIPES.map((recipe) => {
-                let hasAll = true;
-                const ingredientStatuses = recipe.ingredients.map((req) => {
-                  const invItem = player.inventory.find(
-                    (i) => i.baseItemId === req.baseItemId
-                  );
-                  const currentQty = invItem?.quantity || 0;
-                  const hasEnough = currentQty >= req.quantity;
-                  if (!hasEnough) hasAll = false;
-                  return {
-                    name: req.baseItemId,
-                    req: req.quantity,
-                    have: currentQty,
-                    hasEnough,
-                  };
-                });
+        {recipes.length === 0 ? (
+          <Empty>Nothing you can build yet.</Empty>
+        ) : (
+          <div className="space-y-2">
+            {recipes.map((recipe) => {
+              const ingredients = recipe.ingredients.map((req) => ({
+                ...req,
+                have: held(req.baseItemId),
+                ok: held(req.baseItemId) >= req.quantity,
+              }));
+              const canCraft = ingredients.every((i) => i.ok);
 
-                const isCraftingThis = isPending && craftingId === recipe.id;
-
-                return (
-                  <div
-                    key={recipe.id}
-                    className="p-3 border border-zinc-800 bg-zinc-900/50 rounded-md"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-bold text-zinc-200">
-                          {recipe.name}
-                        </h3>
-                        <p className="text-xs text-zinc-500">
-                          {recipe.description}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant={hasAll ? 'default' : 'outline'}
-                        disabled={!hasAll || isPending}
-                        onClick={() => handleCraft(recipe.id)}
-                        className={
-                          hasAll
-                            ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                            : 'border-zinc-700 text-zinc-600 bg-transparent'
-                        }
+              return (
+                <div
+                  key={recipe.id}
+                  className="p-2.5 border rule space-y-2"
+                  style={{ borderRadius: 'var(--radius)' }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="text-[12px] font-bold">
+                        {recipe.name}
+                        {recipe.outputQuantity > 1 &&
+                          ` ×${recipe.outputQuantity}`}
+                      </h4>
+                      <p
+                        className="text-[10px] leading-relaxed mt-0.5"
+                        style={{ color: 'var(--text-dim)' }}
                       >
-                        {isCraftingThis ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          'Craft'
-                        )}
-                      </Button>
+                        {recipe.description}
+                      </p>
                     </div>
-
-                    <div className="text-xs space-y-1">
-                      <span className="text-zinc-400">Requires:</span>
-                      {ingredientStatuses.map((stat, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between pl-2"
-                        >
-                          <span
-                            className={
-                              stat.hasEnough ? 'text-zinc-300' : 'text-red-400'
-                            }
-                          >
-                            {stat.name}
-                          </span>
-                          <span className="flex items-center gap-1 font-mono">
-                            <span
-                              className={
-                                stat.hasEnough
-                                  ? 'text-zinc-400'
-                                  : 'text-red-400'
-                              }
-                            >
-                              {stat.have}/{stat.req}
-                            </span>
-                            {stat.hasEnough ? (
-                              <Check className="h-3 w-3 text-emerald-500" />
-                            ) : (
-                              <X className="h-3 w-3 text-red-500" />
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    <TinyButton
+                      tone={canCraft ? 'accent' : 'default'}
+                      disabled={!canCraft || isPending}
+                      pending={isPending && craftingId === recipe.id}
+                      onClick={() => handleCraft(recipe.id)}
+                    >
+                      Craft
+                    </TinyButton>
                   </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </div>
-      </SheetContent>
+
+                  <ul className="space-y-0.5">
+                    {ingredients.map((req) => (
+                      <li
+                        key={req.baseItemId}
+                        className="flex justify-between text-[10px]"
+                        style={{
+                          color: req.ok
+                            ? 'var(--text-muted)'
+                            : 'var(--stat-health)',
+                        }}
+                      >
+                        <span>{req.baseItemId}</span>
+                        <span className="tabular-nums">
+                          {req.have}/{req.quantity}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SheetShell>
     </Sheet>
   );
 }

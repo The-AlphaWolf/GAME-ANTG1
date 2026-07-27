@@ -2,225 +2,213 @@
 
 import { useState, useTransition } from 'react';
 import { ActionFeed } from './action-feed';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Send, Loader2, Sword, Map, Search, Skull } from 'lucide-react';
-import { submitAction, respawn } from '@/actions/game';
-import {
-  executeCombatTurn,
-  CombatAction,
-  initiateCombat,
-} from '@/actions/combat';
-import { explore, scavenge } from '@/actions/exploration';
 import { NewGameButton } from './new-game-button';
 import { EventLog, ActiveEncounter } from '@prisma/client';
-import { Progress } from '@/components/ui/progress';
+import {
+  Loader2,
+  Send,
+  Route,
+  Search,
+  Swords,
+  Shield,
+  ArrowLeftRight,
+  Skull,
+} from 'lucide-react';
+import { submitAction, respawn } from '@/actions/game';
+import { executeCombatTurn } from '@/actions/combat';
+import { explore, scavenge } from '@/actions/exploration';
 
 interface NarrativeConsoleProps {
   events: EventLog[];
   activeEncounter?: ActiveEncounter | null;
   isDead?: boolean;
+  fuelCost: number;
+  suggestions: string[];
 }
 
 export function NarrativeConsole({
   events,
   activeEncounter,
   isDead,
+  fuelCost,
+  suggestions,
 }: NarrativeConsoleProps) {
   const [customAction, setCustomAction] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const defaultChoices = [
-    { id: 1, text: 'Search the glovebox' },
-    { id: 2, text: 'Try to start the engine again' },
-    { id: 3, text: 'Look out the window' },
-  ];
+  const run = (fn: () => Promise<{ error?: string } | void>) => {
+    setError(null);
+    startTransition(async () => {
+      const result = await fn();
+      if (result && 'error' in result && result.error) setError(result.error);
+    });
+  };
 
   const handleSubmit = (text: string) => {
     if (!text.trim()) return;
-
-    startTransition(async () => {
+    run(async () => {
       const formData = new FormData();
       formData.append('actionText', text);
-      await submitAction(formData);
+      const result = await submitAction(formData);
       setCustomAction('');
-    });
-  };
-
-  const handleCombatAction = (action: CombatAction) => {
-    startTransition(async () => {
-      await executeCombatTurn(action);
-    });
-  };
-
-  const handleExplore = () => {
-    startTransition(async () => {
-      await explore();
-    });
-  };
-
-  const handleScavenge = () => {
-    startTransition(async () => {
-      await scavenge();
-    });
-  };
-
-  const handleRespawn = () => {
-    startTransition(async () => {
-      await respawn();
-    });
-  };
-
-  const handleSpawnEnemy = () => {
-    startTransition(async () => {
-      await initiateCombat('Wasteland Goblin', 40, 8);
+      return result;
     });
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Event Log feed (Takes up most of the space) */}
+    <div className="panel flex flex-col h-full min-h-0 overflow-hidden">
       <ActionFeed events={events} />
 
-      {/* Death Screen */}
+      {error && (
+        <div
+          role="alert"
+          className="shrink-0 px-4 py-2 border-t rule text-[11px]"
+          style={{
+            color: 'var(--stat-health)',
+            background: 'rgba(239, 74, 74, 0.07)',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
       {isDead ? (
-        <div className="p-8 border-t border-red-900/50 bg-red-950/20 backdrop-blur shrink-0 z-10 flex flex-col items-center gap-4 text-center">
-          <Skull className="h-10 w-10 text-red-500" />
+        <div className="shrink-0 border-t rule px-4 py-5 flex flex-col items-center gap-3 text-center">
+          <Skull className="h-6 w-6" style={{ color: 'var(--stat-health)' }} />
           <div>
-            <p className="text-red-400 font-bold uppercase tracking-widest text-lg">
+            <p
+              className="text-xs font-bold tracking-[0.2em] uppercase"
+              style={{ color: 'var(--stat-health)' }}
+            >
               You Died
             </p>
-            <p className="text-zinc-400 text-sm mt-1">
-              Your journey ends here... but the road always offers another
-              chance. Respawning costs half your EC.
+            <p
+              className="text-[11px] mt-1.5 max-w-md"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Marlow&rsquo;s people can get you breathing again. It costs a
+              quarter of your EC and nothing else — your gear and your miles
+              stay yours.
             </p>
           </div>
-          <div className="flex gap-3">
-            <Button
-              onClick={handleRespawn}
+          <div className="flex gap-2">
+            <ConsoleButton
+              onClick={() => run(respawn)}
               disabled={isPending}
-              className="bg-red-900 hover:bg-red-800 text-red-100 border border-red-700"
+              pending={isPending}
+              icon={<Skull className="h-3.5 w-3.5" />}
+              tone="danger"
+              label="Respawn"
             >
-              {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Skull className="h-4 w-4 mr-2" />
-              )}
               Respawn
-            </Button>
+            </ConsoleButton>
             <NewGameButton variant="death" />
           </div>
         </div>
       ) : (
-        <div className="p-4 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur shrink-0 z-10 flex flex-col gap-4">
-          {/* Active Encounter Status */}
+        <div className="shrink-0 border-t rule p-3 space-y-2.5">
           {activeEncounter ? (
-            <div className="bg-red-950/20 border border-red-900/50 rounded-lg p-3">
-              <div className="flex justify-between items-end mb-2">
-                <span className="text-red-400 font-bold uppercase tracking-wider flex items-center gap-2 text-sm">
-                  <Sword className="h-4 w-4" /> {activeEncounter.enemyName}
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <span
+                  className="text-[11px] font-bold uppercase tracking-[0.14em] flex items-center gap-1.5"
+                  style={{ color: 'var(--stat-health)' }}
+                >
+                  <Swords className="h-3.5 w-3.5" />
+                  {activeEncounter.enemyName}
                 </span>
-                <span className="text-xs text-red-300">
+                <span
+                  className="text-[10px] tabular-nums"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   {activeEncounter.enemyHp.toFixed(0)} /{' '}
                   {activeEncounter.enemyMaxHp.toFixed(0)} HP
                 </span>
               </div>
-              <Progress
-                value={
-                  (activeEncounter.enemyHp / activeEncounter.enemyMaxHp) * 100
-                }
-                className="h-1.5 bg-red-950 [&>div]:bg-red-500"
-              />
-            </div>
+              <div
+                className="meter"
+                style={{ ['--meter-color' as string]: 'var(--stat-health)' }}
+              >
+                <span
+                  style={{
+                    width: `${(activeEncounter.enemyHp / activeEncounter.enemyMaxHp) * 100}%`,
+                  }}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-0.5">
+                <ConsoleButton
+                  onClick={() => run(() => executeCombatTurn('ATTACK'))}
+                  disabled={isPending}
+                  pending={isPending}
+                  icon={<Swords className="h-3.5 w-3.5" />}
+                  tone="danger"
+                  label="Attack"
+                >
+                  Attack
+                </ConsoleButton>
+                <ConsoleButton
+                  onClick={() => run(() => executeCombatTurn('DEFEND'))}
+                  disabled={isPending}
+                  pending={isPending}
+                  icon={<Shield className="h-3.5 w-3.5" />}
+                  label="Defend"
+                >
+                  Defend
+                </ConsoleButton>
+                <ConsoleButton
+                  onClick={() => run(() => executeCombatTurn('FLEE'))}
+                  disabled={isPending}
+                  pending={isPending}
+                  icon={<ArrowLeftRight className="h-3.5 w-3.5" />}
+                  label="Flee"
+                >
+                  Flee
+                </ConsoleButton>
+              </div>
+            </>
           ) : (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1 bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                onClick={handleExplore}
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Map className="h-4 w-4 mr-2" />
-                )}
-                Drive Forward (-5 Fuel)
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white"
-                onClick={handleScavenge}
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Search className="h-4 w-4 mr-2" />
-                )}
-                Scavenge Area (-5 Energy)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSpawnEnemy}
-                disabled={isPending}
-                className="text-xs border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300"
-              >
-                [DEV]
-              </Button>
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <ConsoleButton
+                  onClick={() => run(explore)}
+                  disabled={isPending}
+                  pending={isPending}
+                  icon={<Route className="h-3.5 w-3.5" />}
+                  tone="accent"
+                  label="Drive forward"
+                >
+                  Drive Forward (-{fuelCost} Fuel)
+                </ConsoleButton>
+                <ConsoleButton
+                  onClick={() => run(scavenge)}
+                  disabled={isPending}
+                  pending={isPending}
+                  icon={<Search className="h-3.5 w-3.5" />}
+                  label="Scavenge area"
+                >
+                  Scavenge Area (-5 Energy)
+                </ConsoleButton>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleSubmit(text)}
+                    className="px-2 py-1 text-[10px] uppercase tracking-[0.12em] border rule transition-colors disabled:opacity-40"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
-          {/* Quick Choices Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {activeEncounter ? (
-              <>
-                <Button
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => handleCombatAction('ATTACK')}
-                  className="justify-start bg-red-950/30 border-red-900/50 text-red-200 hover:text-white hover:bg-red-900/50"
-                >
-                  <span className="mr-2 text-red-500 font-mono">1.</span> Attack
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => handleCombatAction('DEFEND')}
-                  className="justify-start bg-blue-950/30 border-blue-900/50 text-blue-200 hover:text-white hover:bg-blue-900/50"
-                >
-                  <span className="mr-2 text-blue-500 font-mono">2.</span>{' '}
-                  Defend
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => handleCombatAction('FLEE')}
-                  className="justify-start bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 sm:col-span-2"
-                >
-                  <span className="mr-2 text-zinc-500 font-mono">3.</span> Flee
-                </Button>
-              </>
-            ) : (
-              defaultChoices.map((choice) => (
-                <Button
-                  key={choice.id}
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => handleSubmit(choice.text)}
-                  className="justify-start bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
-                >
-                  <span className="mr-2 text-zinc-500 font-mono">
-                    {choice.id}.
-                  </span>{' '}
-                  {choice.text}
-                </Button>
-              ))
-            )}
-          </div>
-
-          {/* Custom Input */}
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -228,31 +216,84 @@ export function NarrativeConsole({
               handleSubmit(customAction);
             }}
           >
-            <Input
+            <input
               value={customAction}
               onChange={(e) => setCustomAction(e.target.value)}
               disabled={isPending || !!activeEncounter}
               placeholder={
-                activeEncounter ? 'Focus on combat!' : 'Type your action...'
+                activeEncounter
+                  ? 'Focus on the fight.'
+                  : 'Type an action — rest, eat, drink, refuel, repair, radio Wren...'
               }
-              className="bg-zinc-900 border-zinc-800 font-mono text-sm placeholder:text-zinc-600 focus-visible:ring-zinc-700"
+              aria-label="Custom action"
+              className="flex-1 min-w-0 h-8 px-2.5 text-[11px] border rule bg-transparent outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--line-strong)] disabled:opacity-40"
+              style={{ color: 'var(--text)', borderRadius: 'var(--radius)' }}
             />
-            <Button
+            <button
               type="submit"
-              size="icon"
               disabled={isPending || !!activeEncounter}
-              className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
+              aria-label="Submit action"
+              className="h-8 w-8 shrink-0 inline-flex items-center justify-center border rule transition-colors disabled:opacity-40"
+              style={{
+                color: 'var(--accent)',
+                background: 'var(--accent-soft)',
+                borderRadius: 'var(--radius)',
+              }}
             >
               {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Send className="h-4 w-4" />
+                <Send className="h-3.5 w-3.5" />
               )}
-              <span className="sr-only">Send Action</span>
-            </Button>
+            </button>
           </form>
         </div>
       )}
     </div>
+  );
+}
+
+function ConsoleButton({
+  children,
+  onClick,
+  disabled,
+  pending,
+  icon,
+  tone,
+  label,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  pending?: boolean;
+  icon?: React.ReactNode;
+  tone?: 'accent' | 'danger';
+  label: string;
+}) {
+  const color =
+    tone === 'accent'
+      ? 'var(--accent)'
+      : tone === 'danger'
+        ? 'var(--stat-health)'
+        : 'var(--text-muted)';
+  const background =
+    tone === 'accent'
+      ? 'var(--accent-soft)'
+      : tone === 'danger'
+        ? 'rgba(239, 74, 74, 0.08)'
+        : 'transparent';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="h-9 px-3 inline-flex items-center justify-center gap-2 border rule text-[11px] uppercase tracking-[0.1em] transition-opacity disabled:opacity-40"
+      style={{ color, background, borderRadius: 'var(--radius)' }}
+    >
+      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon}
+      <span className="truncate">{children}</span>
+    </button>
   );
 }

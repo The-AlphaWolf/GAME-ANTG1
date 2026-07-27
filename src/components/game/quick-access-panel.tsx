@@ -1,17 +1,3 @@
-import { Separator } from '@/components/ui/separator';
-import {
-  Package,
-  Settings,
-  Car,
-  Hammer,
-  Send,
-  ScrollText,
-  Sparkles,
-  Store,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-
 import {
   Player,
   PlayerInventory,
@@ -20,12 +6,17 @@ import {
   ChatMessage,
   ActiveQuest,
 } from '@prisma/client';
+import { Send } from 'lucide-react';
 import { InventorySheet } from './inventory-sheet';
 import { VehicleSheet } from './vehicle-sheet';
 import { CraftingSheet } from './crafting-sheet';
 import { QuestLogSheet } from './quest-log';
 import { ShopSheet } from './shop-sheet';
 import { sendMessage } from '@/actions/chat';
+import { RARITY_COLORS } from '@/lib/game/rarity';
+import { ITEMS, getArmorDefense, getWeaponDamage } from '@/lib/game/items';
+import { DAILY_CHARGES } from '@/lib/game/talent';
+import { Meter } from './meter';
 
 type PlayerWithInventory = Player & {
   inventory: PlayerInventory[];
@@ -40,209 +31,268 @@ export function QuickAccessPanel({
   player: PlayerWithInventory;
   chatMessages?: ChatMessage[];
 }) {
-  const equippedWeapon = player.inventory.find((i) => i.equipSlot === 'WEAPON');
+  const weapon = player.inventory.find((i) => i.equipSlot === 'WEAPON');
+  const chest = player.inventory.find((i) => i.equipSlot === 'CHEST');
+  const consumables = player.inventory.filter(
+    (i) => ITEMS[i.baseItemId]?.effects && !i.equipSlot
+  );
+  const consumableCount = consumables.reduce((sum, i) => sum + i.quantity, 0);
+  const openQuests = player.quests.filter((q) => q.status === 'ACTIVE').length;
 
   return (
-    <div className="p-4 flex flex-col h-full gap-6 overflow-y-auto custom-scrollbar">
-      {/* Talent Summary */}
-      <div className="bg-gradient-to-br from-purple-900/40 via-red-900/20 to-zinc-950 border border-purple-900/50 rounded-lg p-3">
-        <h3 className="text-xs font-bold text-purple-400 tracking-wider mb-2 flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" /> SSS TALENT: UPGRADE
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
+      {/* SSS Talent */}
+      <div
+        className="mx-3 mt-3 p-3 border"
+        style={{
+          borderColor: 'rgba(176, 106, 224, 0.3)',
+          background: 'var(--talent-soft)',
+          borderRadius: 'var(--radius)',
+        }}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span
+            className="text-[9px] font-bold uppercase tracking-[0.2em]"
+            style={{ color: 'var(--talent)' }}
+          >
+            SSS Talent: Upgrade
           </span>
-          <span className="text-zinc-300 font-mono text-[10px] bg-black/50 px-2 py-0.5 rounded">
-            {player.upgradeCharges}/6 CHARGES
+          <span
+            className="text-[10px] tabular-nums px-1.5 py-0.5"
+            style={{
+              color: 'var(--text)',
+              background: 'rgba(0,0,0,0.35)',
+              borderRadius: '3px',
+            }}
+          >
+            {player.upgradeCharges}/{DAILY_CHARGES}
           </span>
-        </h3>
-        <p className="text-[10px] text-zinc-400">
-          Enhance items to higher rarities. Charges reset at midnight.
+        </div>
+        <p
+          className="text-[10px] leading-relaxed"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          Push any item or vehicle part up the rarity ladder. Costs charges and
+          EC, and the cost climbs with the tier. Charges reset at midnight UTC.
         </p>
       </div>
 
-      {/* Inventory Mini */}
-      <div>
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider mb-3 flex items-center gap-2">
-          <Package className="h-4 w-4" /> QUICK ACCESS
-        </h3>
-        <div className="space-y-2 mb-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded p-2 text-sm flex items-center gap-3">
-            <div className="h-8 w-8 bg-zinc-800 rounded flex items-center justify-center shrink-0">
-              <span className="text-xs text-zinc-500">1</span>
-            </div>
-            <div>
-              <p className="text-zinc-200 font-medium leading-none mb-1">
-                {equippedWeapon ? equippedWeapon.baseItemId : 'Empty Slot'}
-              </p>
-              <p className="text-xs text-zinc-500">
-                {equippedWeapon
-                  ? `Durability: ${equippedWeapon.currentDurability.toFixed(0)}%`
-                  : 'No weapon equipped'}
-              </p>
-            </div>
-          </div>
+      {/* Quick access slots */}
+      <div className="px-3 pt-4 pb-3 space-y-2">
+        <h3 className="micro">Quick Access</h3>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded p-2 text-sm flex items-center gap-3 opacity-50">
-            <div className="h-8 w-8 bg-zinc-800 rounded flex items-center justify-center shrink-0">
-              <span className="text-xs text-zinc-500">2</span>
-            </div>
-            <div>
-              <p className="text-zinc-200 font-medium leading-none mb-1">
-                Empty Slot
-              </p>
-              <p className="text-xs text-zinc-500">Consumable</p>
-            </div>
-          </div>
-        </div>
+        <Slot
+          index={1}
+          name={weapon ? weapon.baseItemId : 'Empty Slot'}
+          rarity={weapon?.rarity}
+          detail={
+            weapon
+              ? `${weapon.rarity} · +${getWeaponDamage(weapon.baseItemId, weapon.rarity)} ATK`
+              : 'No weapon equipped'
+          }
+        />
+        <Slot
+          index={2}
+          name={chest ? chest.baseItemId : 'Empty Slot'}
+          rarity={chest?.rarity}
+          detail={
+            chest
+              ? `${chest.rarity} · +${getArmorDefense(chest.baseItemId, chest.rarity)} DEF`
+              : 'No armor equipped'
+          }
+        />
+        <Slot
+          index={3}
+          name={
+            consumableCount > 0
+              ? `${consumableCount} Consumables`
+              : 'Empty Slot'
+          }
+          detail={
+            consumables[0]
+              ? `Next: ${consumables[0].baseItemId}`
+              : 'Nothing to use'
+          }
+        />
 
-        <InventorySheet inventory={player.inventory} />
+        <InventorySheet
+          inventory={player.inventory}
+          credits={player.credits}
+          charges={player.upgradeCharges}
+        />
       </div>
 
-      <Separator className="bg-zinc-800" />
-
-      {/* Vehicle Status */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
-          <Settings className="h-4 w-4" /> VEHICLE: COMMON VAN
-        </h3>
-
-        {/* Vehicle Quick Status */}
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="flex items-center gap-2 text-zinc-400">
-                <Car className="h-4 w-4" /> Vehicle
-              </span>
-              <span className="text-blue-400 font-mono text-xs">
-                {player.vehicle?.fuel ?? 0}% Fuel
-              </span>
-            </div>
+      {/* Vehicle */}
+      {player.vehicle && (
+        <div className="px-3 py-4 border-t rule space-y-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="micro">Vehicle</h3>
+            <span className="micro-strong truncate">{player.vehicle.type}</span>
           </div>
-          {player.vehicle && (
-            <VehicleSheet vehicle={player.vehicle}>
-              <Button
-                variant="outline"
-                className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
-              >
-                View Vehicle Status
-              </Button>
-            </VehicleSheet>
-          )}
+          <Meter
+            label="Fuel"
+            value={player.vehicle.fuel}
+            color="var(--accent)"
+          />
+          <Meter
+            label="Armor"
+            value={player.vehicle.armor}
+            color="var(--stat-fatigue)"
+          />
+          <VehicleSheet
+            vehicle={player.vehicle}
+            credits={player.credits}
+            charges={player.upgradeCharges}
+          >
+            <PanelButton>Vehicle Status</PanelButton>
+          </VehicleSheet>
         </div>
-      </div>
-      <Separator className="bg-zinc-800" />
+      )}
 
-      {/* Crafting System */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
-          <Hammer className="h-4 w-4" /> CRAFTING BENCH
-        </h3>
+      {/* Stations */}
+      <div className="px-3 py-4 border-t rule space-y-2">
+        <h3 className="micro mb-2.5">Stations</h3>
         <CraftingSheet player={player}>
-          <Button
-            variant="outline"
-            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
-          >
-            Open Crafting Bench
-          </Button>
+          <PanelButton>Crafting Bench</PanelButton>
         </CraftingSheet>
-      </div>
-
-      <Separator className="bg-zinc-800" />
-
-      {/* Trading Post */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
-          <Store className="h-4 w-4" /> TRADING POST
-        </h3>
         <ShopSheet player={player}>
-          <Button
-            variant="outline"
-            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800"
-          >
-            Open Shop ({player.credits} EC)
-          </Button>
+          <PanelButton>Trading Post · {player.credits} EC</PanelButton>
         </ShopSheet>
-      </div>
-
-      <Separator className="bg-zinc-800" />
-
-      {/* Quest System */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider flex items-center gap-2">
-          <ScrollText className="h-4 w-4" /> QUEST LOG
-        </h3>
         <QuestLogSheet player={player}>
-          <Button
-            variant="outline"
-            className="w-full bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 relative"
-          >
-            Open Bounty Board
-            {player.quests.filter((q) => q.status === 'ACTIVE').length > 0 && (
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500" />
-            )}
-          </Button>
+          <PanelButton badge={openQuests > 0}>Bounty Board</PanelButton>
         </QuestLogSheet>
       </div>
 
-      <Separator className="bg-zinc-800" />
+      {/* World radio */}
+      <div className="px-3 py-4 border-t rule flex flex-col flex-1 min-h-[220px]">
+        <h3 className="micro mb-2.5">World Radio</h3>
 
-      {/* World Chat Mini */}
-      <div className="flex-1 flex flex-col min-h-[250px] max-h-[300px]">
-        <h3 className="text-xs font-bold text-zinc-500 tracking-wider mb-2">
-          WORLD RADIO
-        </h3>
-        <div className="flex-1 bg-zinc-900/50 rounded-t-md border border-zinc-800 border-b-0 p-2 overflow-y-auto text-xs space-y-2 custom-scrollbar flex flex-col-reverse">
-          <div className="space-y-2">
-            {chatMessages.length === 0 ? (
-              <p className="text-zinc-500 italic text-center py-4">
-                Radio silence...
+        <div className="flex-1 min-h-[140px] overflow-y-auto custom-scrollbar border rule p-2 space-y-1.5 text-[10px] leading-relaxed">
+          {chatMessages.length === 0 ? (
+            <p className="italic" style={{ color: 'var(--text-dim)' }}>
+              Static. Nobody on the channel yet.
+            </p>
+          ) : (
+            chatMessages.map((msg) => (
+              <p key={msg.id} className="break-words">
+                <span
+                  className="font-bold"
+                  style={{
+                    color:
+                      msg.sender === player.username
+                        ? 'var(--accent)'
+                        : msg.sender === 'VANE'
+                          ? 'var(--stat-health)'
+                          : msg.npcId
+                            ? 'var(--stat-thirst)'
+                            : 'var(--text-muted)',
+                  }}
+                >
+                  {msg.sender}:
+                </span>{' '}
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {msg.message}
+                </span>
               </p>
-            ) : (
-              chatMessages.map((msg) => (
-                <p key={msg.id} className="break-words">
-                  <span
-                    className={`font-bold ${
-                      msg.sender === 'System'
-                        ? 'text-red-400'
-                        : msg.sender === player.username
-                          ? 'text-emerald-400'
-                          : 'text-blue-400'
-                    }`}
-                  >
-                    [{msg.sender}]:
-                  </span>{' '}
-                  <span className="text-zinc-300">{msg.message}</span>
-                </p>
-              ))
-            )}
-          </div>
+            ))
+          )}
         </div>
+
         <form
           action={async (formData) => {
             'use server';
             const message = formData.get('message') as string;
-            if (message) {
-              await sendMessage(message);
-            }
+            if (message) await sendMessage(message);
           }}
-          className="flex bg-zinc-900/80 rounded-b-md border border-zinc-800 p-1"
+          className="flex mt-2 border rule"
+          style={{ borderRadius: 'var(--radius)' }}
         >
-          <Input
+          <input
             name="message"
-            placeholder="Broadcast to world..."
-            className="flex-1 h-8 bg-transparent border-none text-xs focus-visible:ring-0 px-2"
+            placeholder="Broadcast..."
             autoComplete="off"
             maxLength={200}
+            aria-label="Broadcast to world radio"
+            className="flex-1 min-w-0 h-7 px-2 text-[10px] bg-transparent outline-none placeholder:text-[var(--text-dim)]"
+            style={{ color: 'var(--text)' }}
           />
-          <Button
+          <button
             type="submit"
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 text-zinc-400 hover:text-white"
+            aria-label="Send broadcast"
+            className="h-7 w-7 shrink-0 inline-flex items-center justify-center"
+            style={{ color: 'var(--text-muted)' }}
           >
-            <Send className="h-4 w-4" />
-          </Button>
+            <Send className="h-3 w-3" />
+          </button>
         </form>
       </div>
+
+      <div className="px-3 pb-3 pt-1 text-right">
+        <span className="micro">Prisma · Postgres · Docker</span>
+      </div>
     </div>
+  );
+}
+
+function Slot({
+  index,
+  name,
+  detail,
+  rarity,
+}: {
+  index: number;
+  name: string;
+  detail: string;
+  rarity?: keyof typeof RARITY_COLORS;
+}) {
+  const empty = name === 'Empty Slot';
+  return (
+    <div
+      className="flex items-center gap-2.5 p-2 border rule"
+      style={{ borderRadius: 'var(--radius)', opacity: empty ? 0.5 : 1 }}
+    >
+      <span
+        className="h-7 w-7 shrink-0 inline-flex items-center justify-center text-[10px] border rule"
+        style={{ color: 'var(--text-dim)', borderRadius: '3px' }}
+      >
+        {index}
+      </span>
+      <div className="min-w-0">
+        <p
+          className={`text-[11px] truncate ${rarity ? RARITY_COLORS[rarity].split(' ')[0] : ''}`}
+          style={rarity ? undefined : { color: 'var(--text)' }}
+          title={name}
+        >
+          {name}
+        </p>
+        <p className="text-[9px] truncate" style={{ color: 'var(--text-dim)' }}>
+          {detail}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PanelButton({
+  children,
+  badge,
+}: {
+  children: React.ReactNode;
+  badge?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="relative w-full h-8 px-2.5 text-left text-[10px] uppercase tracking-[0.12em] border rule transition-colors hover:border-[var(--line-strong)]"
+      style={{ color: 'var(--text-muted)', borderRadius: 'var(--radius)' }}
+    >
+      {children}
+      {badge && (
+        <span
+          className="absolute right-2 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full"
+          style={{ background: 'var(--accent)' }}
+        />
+      )}
+    </button>
   );
 }

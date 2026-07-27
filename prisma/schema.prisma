@@ -106,11 +106,36 @@ model Player {
   lastUpgradeReset DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
+
+  // --- Rebuild: progression + world clock ---
+  maxHealth   Int      @default(100)
+  turns       Int      @default(0)   // in-world clock ticks; 1 turn = 30 in-world minutes
+  chapter     Int      @default(1)   // story act the player has reached
+  reputation  Int      @default(0)   // standing with the Convoy / roadside factions
+  skillPoints Int      @default(0)   // unspent points granted on level-up
+  storyFlags  Json     @default("{}")
+
   vehicle         Vehicle?
   inventory       PlayerInventory[]
   activeEncounter ActiveEncounter?
   quests          ActiveQuest[]
+  npcRelations    NpcRelation[]
+}
+
+// Per-player standing with a named NPC. Affinity drives what an NPC will
+// offer (discounts, gifts, side quests) when you meet them on the road.
+model NpcRelation {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  npcId     String
+  affinity  Int      @default(0)
+  metCount  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([playerId, npcId])
+  @@index([playerId])
 }
 
 enum RarityTier {
@@ -155,7 +180,8 @@ model VehicleComponent {
   type           ComponentType
   name           String
   rarity         RarityTier    @default(COMMON)
-  isUpgraded     Boolean       @default(false)
+  isUpgraded     Boolean       @default(false) // legacy; superseded by upgradeCount
+  upgradeCount   Int           @default(0)
   durability     Float         @default(100.0)
   maxDurability  Float         @default(100.0)
 
@@ -173,7 +199,8 @@ model PlayerInventory {
   rarity          RarityTier  @default(COMMON)
   quantity        Int         @default(1)
   currentDurability Float     @default(100.0)
-  isUpgraded      Boolean     @default(false)
+  isUpgraded      Boolean     @default(false) // legacy; superseded by upgradeCount
+  upgradeCount    Int         @default(0)
   equipSlot       String?     // "WEAPON", "HEAD", "CHEST", "LEGS", or null
 
   createdAt       DateTime    @default(now())
@@ -214,7 +241,10 @@ model ChatMessage {
   channel   String   @default("WORLD") // WORLD, SYSTEM, TRADE
   sender    String
   message   String
+  npcId     String?  // set when the speaker is a world NPC rather than a player
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model ActiveQuest {

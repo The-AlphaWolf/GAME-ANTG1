@@ -5,6 +5,9 @@ import { prisma } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { AuthError } from 'next-auth';
 import { grantStarterChest } from '@/lib/game/starter-chest';
+import { createStarterVehicle } from '@/lib/game/vehicle';
+import { seedOpeningChatter } from '@/actions/npc';
+import { CHAPTERS } from '@/lib/game/story';
 
 export async function loginAction(formData: FormData) {
   const email = formData.get('email') as string;
@@ -69,16 +72,12 @@ export async function registerAction(formData: FormData) {
       });
 
       const player = await tx.player.create({
-        data: {
-          userId: user.id,
-          username,
-          vehicle: {
-            create: {
-              type: 'Common Van',
-            },
-          },
-        },
+        data: { userId: user.id, username },
       });
+
+      // A bare Vehicle row used to be created here with no components at all,
+      // so only the seeded account ever had a vehicle worth opening.
+      await createStarterVehicle(tx, player.id);
 
       await tx.eventLog.create({
         data: {
@@ -88,9 +87,22 @@ export async function registerAction(formData: FormData) {
         },
       });
 
+      await tx.eventLog.create({
+        data: {
+          playerId: player.id,
+          eventType: 'STORY_BEAT',
+          payload: {
+            text: `CHAPTER 1 — ${CHAPTERS[0].title.toUpperCase()}. ${CHAPTERS[0].opening}`,
+          },
+        },
+      });
+
       // Every survivor starts with a beginner treasure chest of random quality
       await grantStarterChest(tx, player.id);
     });
+
+    // World radio greets the new arrival by name.
+    await seedOpeningChatter(username);
 
     return { success: true };
   } catch (error: unknown) {

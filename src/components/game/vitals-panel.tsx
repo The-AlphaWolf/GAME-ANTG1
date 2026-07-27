@@ -1,111 +1,126 @@
-import { Progress } from '@/components/ui/progress';
-import { Heart, Zap, Coffee, Droplets, Brain, Activity } from 'lucide-react';
-import { Separator } from '@/components/ui/separator';
-
 import { Player } from '@prisma/client';
+import { Meter } from './meter';
+import { levelProgress, xpForLevel, MAX_LEVEL } from '@/lib/game/progression';
+import { chapterForMiles, WIN_DISTANCE } from '@/lib/game/story';
 
 export function VitalsPanel({ player }: { player: Player }) {
+  const chapter = chapterForMiles(player.distanceTraveled);
+  const progress = levelProgress(player.level, player.xp);
+  const nextLevelXp = xpForLevel(Math.min(MAX_LEVEL, player.level + 1));
+
   return (
-    <div className="p-4 flex flex-col h-full gap-6 overflow-y-auto custom-scrollbar">
-      <div>
-        <h2 className="text-lg font-bold tracking-tight text-zinc-100 mb-1">
-          {player.username}
-        </h2>
-        <div className="flex justify-between text-xs text-zinc-500 mb-2">
-          <span>Level {player.level} Survivor</span>
-          <span>XP: {player.xp}/2000</span>
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
+      {/* Identity */}
+      <div className="px-4 py-4 border-b rule">
+        <div className="flex items-baseline justify-between gap-2 mb-1">
+          <h2 className="text-sm font-bold truncate" title={player.username}>
+            {player.username}
+          </h2>
+          <span className="micro-strong shrink-0">LV {player.level}</span>
         </div>
-        <Progress
-          value={Math.min(100, (player.xp / 2000) * 100)}
-          className="h-1.5 bg-zinc-800 [&>div]:bg-zinc-400"
+        <div className="flex items-baseline justify-between mb-1.5">
+          <span className="micro">Survivor</span>
+          <span
+            className="text-[10px] tabular-nums"
+            style={{ color: 'var(--text-dim)' }}
+          >
+            {player.xp} / {nextLevelXp} XP
+          </span>
+        </div>
+        <div
+          className="meter"
+          style={{ ['--meter-color' as string]: 'var(--stat-xp)' }}
+        >
+          <span style={{ width: `${progress * 100}%` }} />
+        </div>
+      </div>
+
+      {/* Vitals */}
+      <div className="px-4 py-4 space-y-4 border-b rule">
+        <h3 className="micro">Survivor Vitals</h3>
+
+        <Meter
+          label="Health"
+          value={player.health}
+          max={player.maxHealth}
+          color="var(--stat-health)"
+          readout={`${player.health}/${player.maxHealth}`}
+        />
+        <Meter
+          label="Energy"
+          value={player.energy}
+          color="var(--stat-energy)"
+        />
+        <Meter
+          label="Hunger"
+          value={player.hunger}
+          color="var(--stat-hunger)"
+        />
+        <Meter
+          label="Thirst"
+          value={player.thirst}
+          color="var(--stat-thirst)"
+        />
+        <Meter
+          label="Sanity"
+          value={player.sanity}
+          color="var(--stat-sanity)"
+        />
+        <Meter
+          label="Fatigue"
+          value={player.fatigue}
+          color="var(--stat-fatigue)"
         />
       </div>
 
-      <Separator className="bg-zinc-800" />
+      {/* Run status */}
+      <div className="px-4 py-4 space-y-3">
+        <h3 className="micro">Run Status</h3>
 
-      <div className="space-y-5">
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-red-400">
-              <Heart className="h-4 w-4" /> Health
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between">
+            <span className="micro-strong">Chapter {chapter.number}</span>
+            <span
+              className="text-[10px] tabular-nums"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {player.distanceTraveled} / {WIN_DISTANCE} mi
             </span>
-            <span className="font-medium">{player.health}%</span>
           </div>
-          <Progress
-            value={player.health}
-            className="h-2 bg-zinc-800 [&>div]:bg-red-500"
-          />
+          <div
+            className="meter"
+            style={{ ['--meter-color' as string]: 'var(--accent)' }}
+          >
+            <span
+              style={{
+                width: `${Math.min(100, (player.distanceTraveled / WIN_DISTANCE) * 100)}%`,
+              }}
+            />
+          </div>
+          <p
+            className="text-[10px] leading-relaxed pt-1"
+            style={{ color: 'var(--text-dim)' }}
+          >
+            {chapter.objective}
+          </p>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-yellow-400">
-              <Zap className="h-4 w-4" /> Energy
-            </span>
-            <span className="font-medium">{player.energy}%</span>
-          </div>
-          <Progress
-            value={player.energy}
-            className="h-2 bg-zinc-800 [&>div]:bg-yellow-500"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-orange-400">
-              <Coffee className="h-4 w-4" /> Hunger
-            </span>
-            <span className="font-medium">{player.hunger}%</span>
-          </div>
-          <Progress
-            value={player.hunger}
-            className="h-2 bg-zinc-800 [&>div]:bg-orange-500"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-blue-400">
-              <Droplets className="h-4 w-4" /> Thirst
-            </span>
-            <span className="font-medium">{player.thirst}%</span>
-          </div>
-          <Progress
-            value={player.thirst}
-            className="h-2 bg-zinc-800 [&>div]:bg-blue-500"
-          />
-        </div>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 pt-1">
+          <Stat label="Standing" value={player.reputation} />
+          <Stat label="Skill Pts" value={player.skillPoints} />
+        </dl>
       </div>
+    </div>
+  );
+}
 
-      <Separator className="bg-zinc-800" />
-
-      <div className="space-y-5">
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-purple-400">
-              <Brain className="h-4 w-4" /> Sanity
-            </span>
-            <span className="font-medium">95%</span>
-          </div>
-          <Progress
-            value={95}
-            className="h-2 bg-zinc-800 [&>div]:bg-purple-500"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="flex items-center gap-2 text-indigo-400">
-              <Activity className="h-4 w-4" /> Fatigue
-            </span>
-            <span className="font-medium">15%</span>
-          </div>
-          <Progress
-            value={15}
-            className="h-2 bg-zinc-800 [&>div]:bg-indigo-500"
-          />
-        </div>
-      </div>
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt className="micro mb-1">{label}</dt>
+      <dd className="text-xs tabular-nums" style={{ color: 'var(--text)' }}>
+        {value}
+      </dd>
     </div>
   );
 }

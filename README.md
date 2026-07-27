@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ANTG1
 
-## Getting Started
+A full-stack browser survival RPG. A thousand miles of Highway 17 stand between you
+and the evac port at Vantage. Drive, scavenge, fight, trade, and outlast the Convoy.
 
-First, run the development server:
+Next.js 16 · React 19 · Prisma · Postgres (Neon) · Auth.js · Tailwind 4
+
+## Getting started
+
+```bash
+npm install
+```
+
+Copy `.env.example` to `.env` and set `DATABASE_URL` (and `DIRECT_URL` if you are on
+a pooled Postgres such as Neon), then push the schema:
+
+```bash
+npm run db:push
+```
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) and register a survivor.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command           | What it does                           |
+| ----------------- | -------------------------------------- |
+| `npm run dev`     | Dev server                             |
+| `npm run build`   | `prisma generate` + production build   |
+| `npm test`        | Vitest suite                           |
+| `npm run lint`    | ESLint                                 |
+| `npm run db:push` | Sync the Prisma schema to the database |
+| `npm run db:seed` | Seed a demo player                     |
 
-## Learn More
+## How the game works
 
-To learn more about Next.js, take a look at the following resources:
+**The loop.** Drive east to cover miles, or scavenge where you are. Both cost a
+resource and advance the world clock. Driving burns fuel and can turn up loot, a
+sealed cache, an NPC, or a fight; scavenging costs energy and is loot-heavier.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Progression.** Everything that costs a turn pays XP. Levelling raises max HP,
+grants a skill point and EC, and heals you to full. Enemy pools, loot quality and
+shop stock all scale with the chapter you have reached.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Survival.** Hunger, thirst and fatigue rise each turn and only bite once a stat
+goes critical (85+), where it starts draining HP. Weather changes how fast you get
+thirsty and how much fuel you burn.
 
-## Deploy on Vercel
+**Story.** Five chapters, gated on mileage, with a named cast — Wren, Boone, Doc
+Marlow, Tick, Sister Ada, Kestrel — and Marshal Vane running the Convoy that owns
+the road. NPCs broadcast on the world radio, answer when you talk to them, and can
+be met on the road, where they remember you through an affinity score.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**SSS Talent.** Push any item or vehicle component up the rarity ladder. Costs
+daily charges plus EC, and the cost climbs with the tier. Items can be upgraded
+repeatedly, all the way to Mythical.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Layout
+
+```
+src/lib/game/   Rules and content: items, enemies, loot, quests, story, NPCs,
+                progression, world clock. Pure functions, no I/O.
+src/actions/    Server actions. All state changes run in a transaction.
+src/components/ HUD, panels and station drawers.
+prisma/         Schema and seed.
+__tests__/      Vitest — action guards plus content-integrity checks that fail
+                if a quest, recipe or drop references content that does not exist.
+```

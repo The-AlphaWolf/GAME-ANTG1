@@ -1,115 +1,127 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
-import { explore } from '@/actions/exploration';
+import { explore, scavenge } from '@/actions/exploration';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
+import {
+  makePlayer,
+  makeVehicle,
+  type PrismaMock,
+} from '../helpers/prisma-mock';
 
-vi.mock('@/auth', () => ({
-  auth: vi.fn(),
-}));
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+vi.mock('@/actions/quests', () => ({ progressQuests: vi.fn() }));
+vi.mock('@/actions/npc', () => ({ npcChatterTick: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
 
-vi.mock('@/actions/quests', () => ({
-  progressQuests: vi.fn(),
-}));
-
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    player: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    vehicle: {
-      update: vi.fn(),
-    },
-    eventLog: {
-      create: vi.fn(),
-    },
-    playerInventory: {
-      create: vi.fn(),
-      update: vi.fn(),
-    },
-    activeEncounter: {
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
-
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
+const db = prisma as unknown as PrismaMock;
 
 describe('Exploration Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.player.updateMany.mockResolvedValue({ count: 1 });
+    db.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
   });
 
-  it('fails if no vehicle', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      isAlive: true,
-      health: 100,
-      vehicle: null,
+  describe('explore', () => {
+    it('rejects an unauthenticated caller', async () => {
+      (auth as Mock).mockResolvedValue(null);
+      expect((await explore()).error).toBe('Unauthorized');
     });
 
-    const res = await explore();
-    expect(res.error).toBe('You need a vehicle to explore');
+    it('fails without a vehicle', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer({ vehicle: null }));
+      expect((await explore()).error).toBe('You need a vehicle to explore');
+    });
+
+    it('fails when the tank is empty', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ vehicle: makeVehicle({ fuel: 0 }) })
+      );
+      expect((await explore()).error).toMatch(/Not enough fuel/);
+    });
+
+    it('fails while an encounter is live', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({
+          vehicle: makeVehicle(),
+          activeEncounter: { id: 'enc1' },
+        })
+      );
+      expect((await explore()).error).toBe('Cannot drive while in combat');
+    });
+
+    it('fails when dead', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ isAlive: false, health: 0, vehicle: makeVehicle() })
+      );
+      expect((await explore()).error).toBe('You are dead');
+    });
+
+    it('advances distance, burns fuel and logs a narrative', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ vehicle: makeVehicle() })
+      );
+
+      const result = await explore();
+
+      expect(result.success).toBe(true);
+      expect(db.player.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            distanceTraveled: { increment: expect.any(Number) },
+          }),
+        })
+      );
+      expect(db.vehicle.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fuel: { decrement: expect.any(Number) },
+          }),
+        })
+      );
+      expect(db.eventLog.create).toHaveBeenCalled();
+    });
+
+    it('always resolves to a known encounter type', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ vehicle: makeVehicle() })
+      );
+
+      for (let i = 0; i < 25; i++) {
+        const result = await explore();
+        expect(['empty', 'loot', 'combat', 'npc', 'cache']).toContain(
+          result.eventType
+        );
+      }
+    });
   });
 
-  it('fails if no fuel', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      isAlive: true,
-      health: 100,
-      vehicle: { fuel: 0 },
+  describe('scavenge', () => {
+    it('fails when out of energy', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer({ energy: 1 }));
+      expect((await scavenge()).error).toMatch(/Too exhausted/);
     });
 
-    const res = await explore();
-    expect(res.error).toBe('Not enough fuel to drive');
-  });
+    it('spends energy and logs an outcome', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
 
-  it('fails if already in combat', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      isAlive: true,
-      health: 100,
-      vehicle: { fuel: 10 },
-      activeEncounter: { id: 'enc1' },
-    });
+      const result = await scavenge();
 
-    const res = await explore();
-    expect(res.error).toBe('Cannot explore while in combat');
-  });
-
-  it('explores successfully and triggers an event', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      isAlive: true,
-      health: 100,
-      distanceTraveled: 100,
-      inventory: [],
-      vehicle: { id: 'v1', fuel: 50 },
+      expect(result.success).toBe(true);
+      expect(db.player.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ energy: { decrement: 5 } }),
+        })
+      );
+      expect(db.eventLog.create).toHaveBeenCalled();
     });
-
-    (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-      const tx = prisma;
-      await cb(tx);
-    });
-
-    const res = await explore();
-    expect(res.success).toBe(true);
-    expect(prisma.player.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { distanceTraveled: 110 },
-    });
-    expect(prisma.vehicle.update).toHaveBeenCalledWith({
-      where: { id: 'v1' },
-      data: { fuel: 45 },
-    });
-    // It should have either created an event, an encounter, or inventory
-    expect(prisma.eventLog.create).toHaveBeenCalled();
   });
 });

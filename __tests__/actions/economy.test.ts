@@ -1,137 +1,116 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
-import { sellItem } from '@/actions/economy';
+import { sellItem, buyItem } from '@/actions/economy';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
+import { getItemPrice, getShopBuyPrice } from '@/lib/game/economy';
+import { makePlayer, makeItem, type PrismaMock } from '../helpers/prisma-mock';
 
-vi.mock('@/auth', () => ({
-  auth: vi.fn(),
-}));
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    player: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    playerInventory: {
-      delete: vi.fn(),
-      update: vi.fn(),
-    },
-    eventLog: {
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
-
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
+const db = prisma as unknown as PrismaMock;
 
 describe('Economy Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.playerInventory.updateMany.mockResolvedValue({ count: 1 });
+    db.player.updateMany.mockResolvedValue({ count: 1 });
+    (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
   });
 
-  it('fails if not logged in', async () => {
-    (auth as Mock).mockResolvedValue(null);
-    const res = await sellItem('inst1');
-    expect(res.error).toBe('Unauthorized');
+  describe('sellItem', () => {
+    it('fails when unauthenticated', async () => {
+      (auth as Mock).mockResolvedValue(null);
+      expect((await sellItem('i1')).error).toBe('Unauthorized');
+    });
+
+    it('fails when the item is not in the inventory', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
+      db.playerInventory.findUnique.mockResolvedValue(null);
+      expect((await sellItem('i1')).error).toBe('Item not found in inventory');
+    });
+
+    it('refuses to sell equipped gear', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
+      db.playerInventory.findUnique.mockResolvedValue(
+        makeItem({ equipSlot: 'WEAPON' })
+      );
+      expect((await sellItem('i1')).error).toBe('Cannot sell equipped items');
+    });
+
+    it('credits the base value for one unit', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
+      db.playerInventory.findUnique.mockResolvedValue(makeItem());
+
+      const result = await sellItem('i1');
+
+      expect(result.success).toBe(true);
+      expect(db.player.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { credits: { increment: getItemPrice('Scrap Metal') } },
+        })
+      );
+    });
+
+    it('scales the payout by rarity and quantity', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
+      db.playerInventory.findUnique.mockResolvedValue(
+        makeItem({ rarity: 'GOLD', quantity: 3 })
+      );
+
+      await sellItem('i1', 3);
+
+      expect(db.player.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            credits: { increment: getItemPrice('Scrap Metal', 'GOLD') * 3 },
+          },
+        })
+      );
+    });
   });
 
-  it('fails if player not found', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue(null);
-    const res = await sellItem('inst1');
-    expect(res.error).toBe('Player not found');
-  });
-
-  it('fails if item not found in inventory', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      credits: 0,
-      inventory: [],
-    });
-    const res = await sellItem('inst1');
-    expect(res.error).toBe('Item not found in inventory');
-  });
-
-  it('fails if item is equipped', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      credits: 0,
-      inventory: [{ instanceId: 'inst1', equipSlot: 'WEAPON' }],
-    });
-    const res = await sellItem('inst1');
-    expect(res.error).toBe('Cannot sell equipped items');
-  });
-
-  it('sells item, deletes inventory row if quantity is 1, and adds credits', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      credits: 100,
-      inventory: [
-        {
-          instanceId: 'inst1',
-          baseItemId: 'Scrap Metal',
-          quantity: 1,
-          equipSlot: null,
-        },
-      ],
+  describe('buyItem', () => {
+    it('rejects items the trader does not stock', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer());
+      expect((await buyItem('Convoy Keycard')).error).toBe(
+        'Item not sold here'
+      );
     });
 
-    (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-      await cb(prisma);
+    it('rejects stock gated behind a later chapter', async () => {
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ distanceTraveled: 0 })
+      );
+      expect((await buyItem('Riot Vest')).error).toMatch(/does not stock/);
     });
 
-    const res = await sellItem('inst1');
-    expect(res.success).toBe(true);
-
-    expect(prisma.playerInventory.delete).toHaveBeenCalledWith({
-      where: { instanceId: 'inst1' },
+    it('rejects a purchase the player cannot afford', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer({ credits: 0 }));
+      expect((await buyItem('Clean Water')).error).toBe('Not enough EC');
     });
 
-    expect(prisma.player.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { credits: 110 }, // 100 + 10 for Scrap Metal
-    });
+    it('debits EC and grants the item', async () => {
+      db.player.findUnique.mockResolvedValue(makePlayer({ credits: 1000 }));
 
-    expect(prisma.eventLog.create).toHaveBeenCalled();
-  });
+      const result = await buyItem('Clean Water', 2);
 
-  it('sells item, decrements quantity if > 1, and adds credits', async () => {
-    (auth as Mock).mockResolvedValue({ user: { name: 'test' } });
-    (prisma.player.findUnique as Mock).mockResolvedValue({
-      id: 'p1',
-      credits: 50,
-      inventory: [
-        {
-          instanceId: 'inst2',
-          baseItemId: 'Wood',
-          quantity: 5,
-          equipSlot: null,
-        },
-      ],
-    });
-
-    (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-      await cb(prisma);
-    });
-
-    const res = await sellItem('inst2');
-    expect(res.success).toBe(true);
-
-    expect(prisma.playerInventory.update).toHaveBeenCalledWith({
-      where: { instanceId: 'inst2' },
-      data: { quantity: 4 },
-    });
-
-    expect(prisma.player.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { credits: 55 }, // 50 + 5 for Wood
+      expect(result.success).toBe(true);
+      expect(db.player.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            credits: { decrement: getShopBuyPrice('Clean Water') * 2 },
+          },
+        })
+      );
+      expect(db.playerInventory.create).toHaveBeenCalled();
     });
   });
 });

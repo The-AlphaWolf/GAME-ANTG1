@@ -2,29 +2,34 @@
 
 import { useState, useTransition } from 'react';
 import { Player } from '@prisma/client';
-import { SHOP_CATALOG, getShopBuyPrice } from '@/lib/game/economy';
+import { getShopBuyPrice, shopCatalogForChapter } from '@/lib/game/economy';
 import { buyItem } from '@/actions/economy';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Store, Loader2, Coins } from 'lucide-react';
-
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetTrigger } from '@/components/ui/sheet';
+import { chapterForMiles } from '@/lib/game/story';
+import { ITEMS } from '@/lib/game/items';
+import { SheetShell, SheetSection, TinyButton, Row } from './sheet-shell';
 
 interface ShopSheetProps {
   player: Player;
   children: React.ReactNode;
 }
 
-const CATEGORIES = ['Food & Water', 'Resources', 'Supplies'] as const;
+const CATEGORIES = ['Food & Water', 'Supplies', 'Gear', 'Resources'] as const;
 
 export function ShopSheet({ player, children }: ShopSheetProps) {
   const [isPending, startTransition] = useTransition();
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleBuy = (baseItemId: string) => {
+  const chapter = chapterForMiles(player.distanceTraveled).number;
+  const catalog = shopCatalogForChapter(chapter);
+
+  const handleBuy = (baseItemId: string, quantity: number) => {
     setBuyingId(baseItemId);
+    setError(null);
     startTransition(async () => {
-      await buyItem(baseItemId);
+      const result = await buyItem(baseItemId, quantity);
+      if (result.error) setError(result.error);
       setBuyingId(null);
     });
   };
@@ -32,82 +37,71 @@ export function ShopSheet({ player, children }: ShopSheetProps) {
   return (
     <Sheet>
       <SheetTrigger render={children as React.ReactElement} />
-      <SheetContent
-        side="right"
-        className="w-[300px] sm:w-[400px] bg-zinc-950 border-zinc-800 text-zinc-100 p-0"
+      <SheetShell
+        title="Trading Post"
+        subtitle="Boone's salvage bay. He stocks deeper the further east you get. Sell from your inventory to earn more."
+        meta={<span className="accent text-[10px]">{player.credits} EC</span>}
       >
-        <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-mono">
-          <div className="p-4 border-b border-zinc-800 shrink-0">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <Store className="h-5 w-5 text-zinc-400" />
-              Trading Post
-            </h2>
-            <p className="text-xs text-zinc-500 mt-1">
-              Spend your hard-earned EC on supplies. Sell from your inventory to
-              earn more.
-            </p>
-            <div className="mt-2 flex items-center gap-2 text-amber-500 font-bold text-sm">
-              <Coins className="h-4 w-4" />
-              <span>{player.credits} EC</span>
-            </div>
-          </div>
+        {error && (
+          <p
+            className="mb-3 text-[10px] p-2 border rule"
+            style={{
+              color: 'var(--stat-health)',
+              borderRadius: 'var(--radius)',
+            }}
+          >
+            {error}
+          </p>
+        )}
 
-          <ScrollArea className="flex-1 min-h-0 p-4">
-            <div className="space-y-6">
-              {CATEGORIES.map((category) => (
-                <div key={category}>
-                  <h3 className="text-xs font-bold text-zinc-500 tracking-wider mb-2 uppercase">
-                    {category}
-                  </h3>
-                  <div className="space-y-2">
-                    {SHOP_CATALOG.filter((i) => i.category === category).map(
-                      (item) => {
-                        const price = getShopBuyPrice(item.baseItemId);
-                        const canAfford = player.credits >= price;
-                        const isBuyingThis =
-                          isPending && buyingId === item.baseItemId;
+        {CATEGORIES.map((category) => {
+          const items = catalog.filter((i) => i.category === category);
+          if (items.length === 0) return null;
 
-                        return (
-                          <div
-                            key={item.baseItemId}
-                            className="p-3 border border-zinc-800 bg-zinc-900/50 rounded-md flex justify-between items-center gap-3"
-                          >
-                            <div className="min-w-0">
-                              <h4 className="font-bold text-zinc-200 text-sm">
-                                {item.baseItemId}
-                              </h4>
-                              <p className="text-xs text-zinc-500">
-                                {item.description}
-                              </p>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant={canAfford ? 'default' : 'outline'}
-                              disabled={!canAfford || isPending}
-                              onClick={() => handleBuy(item.baseItemId)}
-                              className={
-                                canAfford
-                                  ? 'bg-amber-600 hover:bg-amber-500 text-white shrink-0'
-                                  : 'border-zinc-700 text-zinc-600 bg-transparent shrink-0'
-                              }
-                            >
-                              {isBuyingThis ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                `${price} EC`
-                              )}
-                            </Button>
-                          </div>
-                        );
-                      }
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-      </SheetContent>
+          return (
+            <SheetSection key={category} label={category}>
+              {items.map((item) => {
+                const price = getShopBuyPrice(item.baseItemId);
+                const busy = isPending && buyingId === item.baseItemId;
+
+                return (
+                  <Row key={item.baseItemId}>
+                    <div className="min-w-0">
+                      <h4 className="text-[12px] font-bold">
+                        {item.baseItemId}
+                      </h4>
+                      <p
+                        className="text-[10px] leading-relaxed mt-0.5"
+                        style={{ color: 'var(--text-dim)' }}
+                      >
+                        {ITEMS[item.baseItemId]?.description ??
+                          item.description}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <TinyButton
+                        tone="accent"
+                        pending={busy}
+                        disabled={isPending || player.credits < price}
+                        onClick={() => handleBuy(item.baseItemId, 1)}
+                      >
+                        {price} EC
+                      </TinyButton>
+                      <TinyButton
+                        disabled={isPending || player.credits < price * 5}
+                        onClick={() => handleBuy(item.baseItemId, 5)}
+                        title={`Buy 5 for ${price * 5} EC`}
+                      >
+                        ×5
+                      </TinyButton>
+                    </div>
+                  </Row>
+                );
+              })}
+            </SheetSection>
+          );
+        })}
+      </SheetShell>
     </Sheet>
   );
 }

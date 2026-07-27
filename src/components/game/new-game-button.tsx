@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Button } from '@/components/ui/button';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { restartGame } from '@/actions/game';
 
@@ -22,58 +21,63 @@ export function NewGameButton({
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-red-400 hidden sm:inline">
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="text-[10px] hidden sm:inline"
+          style={{ color: 'var(--stat-health)' }}
+        >
           Wipe all progress?
         </span>
-        <Button
-          size="sm"
-          disabled={isPending}
-          onClick={handleRestart}
-          className="h-7 text-xs bg-red-900 hover:bg-red-800 text-red-100 border border-red-700"
-        >
+        <Chip tone="danger" disabled={isPending} onClick={handleRestart}>
           {isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <RotateCcw className="h-3 w-3 mr-1" />
+            <RotateCcw className="h-3 w-3" />
           )}
-          Yes, Restart
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={isPending}
-          onClick={() => setConfirming(false)}
-          className="h-7 text-xs bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-        >
+          Confirm
+        </Chip>
+        <Chip disabled={isPending} onClick={() => setConfirming(false)}>
           Cancel
-        </Button>
-      </div>
-    );
-  }
-
-  if (variant === 'death') {
-    return (
-      <Button
-        variant="outline"
-        onClick={() => setConfirming(true)}
-        className="bg-zinc-900 border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-      >
-        <RotateCcw className="h-4 w-4 mr-2" />
-        Start New Game
-      </Button>
+        </Chip>
+      </span>
     );
   }
 
   return (
-    <Button
-      size="sm"
-      variant="outline"
+    <Chip
       onClick={() => setConfirming(true)}
-      className="h-7 text-xs bg-zinc-900 border-zinc-700 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+      tone={variant === 'death' ? 'default' : 'default'}
     >
-      <RotateCcw className="h-3 w-3 mr-1" />
+      <RotateCcw className="h-3 w-3" />
       New Game
-    </Button>
+    </Chip>
+  );
+}
+
+function Chip({
+  children,
+  onClick,
+  disabled,
+  tone = 'default',
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: 'default' | 'danger';
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="h-7 px-2.5 inline-flex items-center gap-1.5 border rule text-[10px] uppercase tracking-[0.1em] transition-opacity disabled:opacity-40"
+      style={{
+        color: tone === 'danger' ? 'var(--stat-health)' : 'var(--text-muted)',
+        background: tone === 'danger' ? 'rgba(239,74,74,0.08)' : 'transparent',
+        borderRadius: 'var(--radius)',
+      }}
+    >
+      {children}
+    </button>
   );
 }

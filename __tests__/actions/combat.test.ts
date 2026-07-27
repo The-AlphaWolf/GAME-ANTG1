@@ -1,135 +1,162 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
-import { initiateCombat, executeCombatTurn } from '@/actions/combat';
+import { executeCombatTurn } from '@/actions/combat';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { makePlayer, makeItem, type PrismaMock } from '../helpers/prisma-mock';
 
-vi.mock('@/auth', () => ({
-  auth: vi.fn(),
-}));
+vi.mock('@/auth', () => ({ auth: vi.fn() }));
+vi.mock('@/actions/quests', () => ({ progressQuests: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    player: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
+const db = prisma as unknown as PrismaMock;
 
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
+const encounter = {
+  id: 'enc1',
+  playerId: 'p1',
+  enemyName: 'Feral Scavenger',
+  enemyHp: 26,
+  enemyMaxHp: 26,
+  enemyAttack: 5,
+};
 
 describe('Combat Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.player.updateMany.mockResolvedValue({ count: 1 });
+    db.activeEncounter.updateMany.mockResolvedValue({ count: 1 });
+    db.activeEncounter.deleteMany.mockResolvedValue({ count: 1 });
+    (auth as Mock).mockResolvedValue({ user: { name: 'Tester' } });
   });
 
-  describe('initiateCombat', () => {
-    it('returns error if unauthorized', async () => {
-      (auth as Mock).mockResolvedValue(null);
-      const res = await initiateCombat('Goblin', 50, 10);
-      expect(res).toEqual({ error: 'Unauthorized' });
-    });
-
-    it('spawns an encounter and clears old ones in a transaction', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      (prisma.player.findUnique as Mock).mockResolvedValue({
-        id: 'player-1',
-        isAlive: true,
-        health: 100,
-      });
-
-      // Mock the transaction callback behavior
-      (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-        const tx = {
-          activeEncounter: {
-            deleteMany: vi.fn(),
-            create: vi.fn(),
-          },
-          eventLog: {
-            create: vi.fn(),
-          },
-        };
-        await cb(tx);
-        expect(tx.activeEncounter.deleteMany).toHaveBeenCalledWith({
-          where: { playerId: 'player-1' },
-        });
-        expect(tx.activeEncounter.create).toHaveBeenCalledWith({
-          data: {
-            playerId: 'player-1',
-            enemyName: 'Goblin',
-            enemyHp: 50,
-            enemyMaxHp: 50,
-            enemyAttack: 10,
-          },
-        });
-      });
-
-      const res = await initiateCombat('Goblin', 50, 10);
-      expect(res).toEqual({ success: true });
-      expect(revalidatePath).toHaveBeenCalledWith('/');
+  it('rejects an unauthenticated caller', async () => {
+    (auth as Mock).mockResolvedValue(null);
+    expect(await executeCombatTurn('ATTACK')).toEqual({
+      error: 'Unauthorized',
     });
   });
 
-  describe('executeCombatTurn', () => {
-    it('returns error if no active encounter', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      (prisma.player.findUnique as Mock).mockResolvedValue({
-        id: 'player-1',
-        isAlive: true,
-        health: 100,
-        activeEncounter: null,
-      });
-
-      const res = await executeCombatTurn('ATTACK');
-      expect(res).toEqual({ error: 'No active encounter' });
+  it('errors when there is no encounter', async () => {
+    db.player.findUnique.mockResolvedValue(makePlayer());
+    expect(await executeCombatTurn('ATTACK')).toEqual({
+      error: 'No active encounter',
     });
+  });
 
-    it('processes attack and reduces HP', async () => {
-      (auth as Mock).mockResolvedValue({ user: { name: 'testuser' } });
-      (prisma.player.findUnique as Mock).mockResolvedValue({
-        id: 'player-1',
-        isAlive: true,
-        health: 100,
-        level: 5,
-        inventory: [],
-        activeEncounter: {
-          id: 'encounter-1',
-          enemyName: 'Goblin',
-          enemyHp: 50,
-          enemyMaxHp: 50,
-          enemyAttack: 10,
-        },
-      });
-
-      (prisma.$transaction as Mock).mockImplementation(async (cb) => {
-        const tx = {
-          player: { update: vi.fn() },
-          activeEncounter: { update: vi.fn() },
-          eventLog: { create: vi.fn() },
-        };
-        await cb(tx);
-
-        // Player level 5 = 15 base attack. Enemy has 50 HP.
-        // Enemy attacks for 10. Player has 100 HP.
-        expect(tx.activeEncounter.update).toHaveBeenCalledWith({
-          where: { id: 'encounter-1' },
-          data: { enemyHp: 35 },
-        });
-
-        expect(tx.player.update).toHaveBeenCalledWith({
-          where: { id: 'player-1' },
-          data: { health: 90, isAlive: true },
-        });
-
-        expect(tx.eventLog.create).toHaveBeenCalledTimes(2);
-      });
-
-      const res = await executeCombatTurn('ATTACK');
-      expect(res).toEqual({ success: true });
+  it('errors when the player is dead', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({ isAlive: false, health: 0, activeEncounter: encounter })
+    );
+    expect(await executeCombatTurn('ATTACK')).toEqual({
+      error: 'You are dead',
     });
+  });
+
+  it('applies damage to both sides and revalidates', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({ activeEncounter: encounter })
+    );
+
+    const result = await executeCombatTurn('ATTACK');
+
+    expect(result).toEqual({ success: true });
+    expect(db.player.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ health: 100, isAlive: true }),
+      })
+    );
+    expect(db.eventLog.create).toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalledWith('/');
+  });
+
+  it('an equipped weapon increases damage dealt', async () => {
+    const readEnemyHp = () => {
+      const call = db.activeEncounter.updateMany.mock.calls.at(-1);
+      const deleted = db.activeEncounter.deleteMany.mock.calls.length > 0;
+      // A kill deletes the encounter rather than writing 0 HP.
+      if (deleted) return 0;
+      return (call?.[0] as { data: { enemyHp: number } }).data.enemyHp;
+    };
+
+    // Beefed-up enemy so a single unarmed swing cannot end the fight.
+    const tanky = { ...encounter, enemyHp: 400, enemyMaxHp: 400 };
+
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({ activeEncounter: tanky })
+    );
+    await executeCombatTurn('ATTACK');
+    const unarmedRemaining = readEnemyHp();
+
+    vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.player.updateMany.mockResolvedValue({ count: 1 });
+    db.activeEncounter.updateMany.mockResolvedValue({ count: 1 });
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        activeEncounter: tanky,
+        inventory: [
+          makeItem({
+            baseItemId: 'Convoy Carbine',
+            equipSlot: 'WEAPON',
+            rarity: 'GOLD',
+            quantity: 1,
+          }),
+        ],
+      })
+    );
+    await executeCombatTurn('ATTACK');
+    const armedRemaining = readEnemyHp();
+
+    expect(armedRemaining).toBeLessThan(unarmedRemaining);
+  });
+
+  it('defending still deals damage rather than stalling', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({
+        activeEncounter: { ...encounter, enemyHp: 400, enemyMaxHp: 400 },
+      })
+    );
+
+    await executeCombatTurn('DEFEND');
+
+    const call = db.activeEncounter.updateMany.mock.calls.at(-1);
+    const remaining = (call?.[0] as { data: { enemyHp: number } }).data.enemyHp;
+    expect(remaining).toBeLessThan(400);
+  });
+
+  it('ends the encounter when the player flees successfully', async () => {
+    db.player.findUnique.mockResolvedValue(
+      makePlayer({ health: 5, activeEncounter: encounter })
+    );
+
+    // At 5/100 HP the desperation bonus makes escape near-certain; run a few
+    // attempts so the assertion is not a coin flip.
+    let escaped = false;
+    for (let i = 0; i < 15 && !escaped; i++) {
+      vi.clearAllMocks();
+      db.$transaction.mockImplementation(async (cb: unknown) =>
+        (cb as (tx: unknown) => Promise<unknown>)(db)
+      );
+      db.player.updateMany.mockResolvedValue({ count: 1 });
+      db.activeEncounter.deleteMany.mockResolvedValue({ count: 1 });
+      db.activeEncounter.updateMany.mockResolvedValue({ count: 1 });
+      db.player.findUnique.mockResolvedValue(
+        makePlayer({ health: 5, activeEncounter: encounter })
+      );
+
+      await executeCombatTurn('FLEE');
+      escaped = db.activeEncounter.deleteMany.mock.calls.length > 0;
+    }
+
+    expect(escaped).toBe(true);
   });
 });

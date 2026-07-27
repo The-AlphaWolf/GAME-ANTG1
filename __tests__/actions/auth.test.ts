@@ -1,24 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { registerAction } from '../../src/actions/auth';
-import { prisma } from '../../src/lib/db';
-// removed bcrypt import
+import { registerAction } from '@/actions/auth';
+import { prisma } from '@/lib/db';
+import { seedOpeningChatter } from '@/actions/npc';
+import { type PrismaMock } from '../helpers/prisma-mock';
 
-vi.mock('../../src/lib/db', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-    },
-    player: {
-      findUnique: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
-
-vi.mock('../../src/auth', () => ({
-  signIn: vi.fn(),
-  signOut: vi.fn(),
-}));
+vi.mock('@/lib/db', async () => {
+  const { createPrismaMock } = await import('../helpers/prisma-mock');
+  return { prisma: createPrismaMock() };
+});
+vi.mock('@/auth', () => ({ signIn: vi.fn(), signOut: vi.fn() }));
+vi.mock('@/actions/npc', () => ({ seedOpeningChatter: vi.fn() }));
 
 vi.mock('next-auth', () => ({
   AuthError: class AuthError extends Error {
@@ -31,62 +22,61 @@ vi.mock('next-auth', () => ({
 }));
 
 vi.mock('bcryptjs', () => ({
-  default: {
-    hash: vi.fn().mockResolvedValue('hashed_password'),
-  },
+  default: { hash: vi.fn().mockResolvedValue('hashed_password') },
 }));
+
+const db = prisma as unknown as PrismaMock;
+
+function form() {
+  const data = new FormData();
+  data.append('username', 'TestUser');
+  data.append('email', 'test@example.com');
+  data.append('password', 'password123');
+  return data;
+}
 
 describe('Auth Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    db.$transaction.mockImplementation(async (cb: unknown) =>
+      (cb as (tx: unknown) => Promise<unknown>)(db)
+    );
+    db.user.create.mockResolvedValue({ id: 'u1' });
+    db.player.create.mockResolvedValue({ id: 'p1' });
+    db.vehicle.create.mockResolvedValue({ id: 'v1' });
   });
 
-  it('should register a new user and player successfully', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (prisma.user.findUnique as any).mockResolvedValue(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (prisma.player.findUnique as any).mockResolvedValue(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
-      return callback({
-        user: { create: vi.fn().mockResolvedValue({ id: 'user-1' }) },
-        player: {
-          create: vi.fn().mockResolvedValue({ id: 'player-1' }),
-          update: vi.fn(),
-        },
-        playerInventory: { create: vi.fn() },
-        eventLog: { create: vi.fn() },
-      });
-    });
+  it('registers a user, a player and a fully-built starter vehicle', async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    db.player.findUnique.mockResolvedValue(null);
 
-    const formData = new FormData();
-    formData.append('username', 'TestUser');
-    formData.append('email', 'test@example.com');
-    formData.append('password', 'password123');
-
-    const result = await registerAction(formData);
+    const result = await registerAction(form());
 
     expect(result).toEqual({ success: true });
-    expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { email: 'test@example.com' },
-    });
-    expect(prisma.player.findUnique).toHaveBeenCalledWith({
-      where: { username: 'TestUser' },
-    });
-    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(db.$transaction).toHaveBeenCalled();
+
+    // Registration used to create a bare Vehicle row with no components.
+    const vehicleArgs = db.vehicle.create.mock.calls[0][0] as {
+      data: { components: { create: unknown[] } };
+    };
+    expect(vehicleArgs.data.components.create).toHaveLength(6);
+
+    // The new survivor's radio is seeded so it is never silent.
+    expect(seedOpeningChatter).toHaveBeenCalledWith('TestUser');
   });
 
-  it('should fail if email already exists', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (prisma.user.findUnique as any).mockResolvedValue({ id: 'user-1' });
+  it('fails if the email is taken', async () => {
+    db.user.findUnique.mockResolvedValue({ id: 'u1' });
+    expect(await registerAction(form())).toEqual({
+      error: 'Email already exists',
+    });
+  });
 
-    const formData = new FormData();
-    formData.append('username', 'TestUser');
-    formData.append('email', 'test@example.com');
-    formData.append('password', 'password123');
-
-    const result = await registerAction(formData);
-
-    expect(result).toEqual({ error: 'Email already exists' });
+  it('fails if the username is taken', async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    db.player.findUnique.mockResolvedValue({ id: 'p1' });
+    expect(await registerAction(form())).toEqual({
+      error: 'Username already exists',
+    });
   });
 });

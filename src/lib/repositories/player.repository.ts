@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 
 export class PlayerRepository {
@@ -24,7 +25,7 @@ export class PlayerRepository {
    */
   static async updatePlayerState(
     playerId: string,
-    data: Partial<import('@prisma/client').Player>
+    data: Prisma.PlayerUpdateInput
   ) {
     return prisma.player.update({
       where: { id: playerId },
